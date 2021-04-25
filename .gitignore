@@ -1,0 +1,7 @@
+/checkpoints/*
+*.json
+/others/*
+/result/*
+/data/*
+/__pycache__/*
+/.idea
