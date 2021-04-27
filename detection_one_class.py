@@ -11,6 +11,7 @@ from models.kde import KDE
 from models.ocsvm import SVM
 from models.vae import NSL_MLP_Autoencoder, AETrainer
 from utils.setup_NSL import NSL_Dataset
+from utils.utils import get_threshold
 # from utils.logs import log_exp_config, log_isoForest, log_AD_results
 
 
@@ -70,7 +71,7 @@ def get_args():
 
 def main():
     args = get_args()
-    args.model_name = 'ae'
+    args.model_name = 'svm'
     args.seed = 4
     print('Options: {}', args)
 

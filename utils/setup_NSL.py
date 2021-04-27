@@ -527,6 +527,7 @@ class NSL_Dataset():
         normal_data = NSL_KDD([('DoS', 0.0)], data_type='normal')
         data = NSL_KDD([('DoS', 0.0)])
         self.train_set = NSL_data(normal_data.train_data, normal_data.train_labels)
+        self.valid_set = NSL_data(normal_data.validation_data, normal_data.validation_labels)
         self.test_set = NSL_data(data.test_data, data.test_labels)
 
     def loaders(self, batch_size: int, shuffle_train=True, shuffle_test=False, num_workers: int = 0) ->(
@@ -535,7 +536,9 @@ class NSL_Dataset():
                                   num_workers=num_workers)
         test_loader = DataLoader(dataset=self.test_set, batch_size=batch_size, shuffle=shuffle_test,
                                  num_workers=num_workers)
-        return train_loader, test_loader
+        valid_loader = DataLoader(dataset=self.valid_set, batch_size=batch_size, shuffle=shuffle_test,
+                                 num_workers=num_workers)
+        return train_loader, test_loader, valid_loader
 
 
 

@@ -76,8 +76,8 @@ class SVM(object):
     def __init__(self, loss, normal_data, data, kernel, **kwargs):
 
         # config
-        self.svm_C = 0.5
-        self.svm_nu = 0.7
+        self.svm_C = 0.3
+        self.svm_nu = 0.5
 
         # initialize
         self.svm = None
@@ -218,9 +218,11 @@ class SVM(object):
                     if self.kernel == 'rbf':
                         idxes = np.arange(len(self.normal_data))
                         np.random.shuffle(idxes)
-                        sel_idxes = idxes[:3000]
+                        sel_idxes = idxes[:300]
                         gamma = 1 / (np.max(pairwise_distances(self.normal_data[sel_idxes])) ** 2)
-                        self.svm = svm.OneClassSVM(kernel='rbf', nu=self.svm_nu, gamma=gamma)
+                        # self.svm = svm.OneClassSVM(kernel='rbf', nu=self.svm_nu, gamma=gamma)
+                        print(f'>>>>>>>>>>>>>>>>>>>>......  svm_nu: {self.svm_nu} ')
+                        self.svm = svm.OneClassSVM(kernel='rbf', nu=self.svm_nu, gamma='auto')
 
                     self.svm.fit(self.normal_data[idxes[:10000]])
 
@@ -297,7 +299,7 @@ class SVM(object):
         print('acc test', self.diag[which_set]['acc'][-1])
 
         # show the accuracy on normal set and anormal set separately
-        split_evaluate(y, scores.flatten(), filename='./result/detection/svm' + self.loss )
+        split_evaluate(y, scores.flatten(), plot=True, filename='./result/detection/svm' + self.loss)
 
         self.stop_clock()
         if which_set == 'test':

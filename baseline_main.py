@@ -411,7 +411,7 @@ if __name__ == '__main__':
 
         # compute a decision-making threshold using the validation dataset
         valid_scores = cal_score(model, normal_vec, validation_loader, None, args.use_cuda)
-        th = get_threshold(valid_scores)
+        th = get_threshold(valid_scores, percent=3)
         print(f'the threshold is set as {th}')
 
         # evaluating the scores of the test dataset and show the IDS performance

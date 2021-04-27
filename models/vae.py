@@ -11,7 +11,7 @@ import numpy as np
 import pickle
 
 from utils.logs import AD_Log
-from utils.utils import split_evaluate
+from utils.utils import split_evaluate, get_threshold
 
 input_size = 121
 layer1_size = 512
@@ -161,7 +161,7 @@ class AETrainer(object):
         ae_net = ae_net.to(self.device)
 
         # Get train data loader
-        train_loader, _ = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+        train_loader, _, _ = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
 
         # Set optimizer (Adam optimizer for now)
         optimizer = optim.Adam(ae_net.parameters(), lr=self.lr, weight_decay=self.weight_decay,
@@ -220,7 +220,7 @@ class AETrainer(object):
         ae_net = ae_net.to(self.device)
 
         # Get test data loader
-        _, test_loader = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+        _, test_loader, valid_loader = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
 
         # Testing
         logger.info('Testing autoencoder...')
@@ -229,7 +229,18 @@ class AETrainer(object):
         start_time = time.time()
         label_score = []
         ae_net.eval()
+
+        valid_label_score = []
         with torch.no_grad():
+            # calculate scores for the validation dataset
+            for data in valid_loader:
+                inputs, labels = data
+                inputs = inputs.to(self.device)
+                outputs, _, _ = ae_net(inputs.float())
+                valid_scores = -torch.sum((outputs - inputs) ** 2, dim=tuple(range(1, outputs.dim())))
+                valid_label_score += list(zip(labels.cpu().data.numpy().tolist(),
+                                          valid_scores.cpu().data.numpy().tolist()))
+
             for data in test_loader:
                 inputs, labels = data
                 inputs = inputs.to(self.device)
@@ -238,7 +249,7 @@ class AETrainer(object):
                 scores = -torch.sum((outputs - inputs) ** 2, dim=tuple(range(1, outputs.dim())))
                 loss = torch.mean(scores)
 
-                # Save triple of (idx, label, score) in a list
+                # Save (label, score) in a list
                 label_score += list(zip(labels.cpu().data.numpy().tolist(),
                                         scores.cpu().data.numpy().tolist()))
 
@@ -254,7 +265,13 @@ class AETrainer(object):
         auc = roc_auc_score(labels, scores)
         logger.info('Test set AUC: {:.2f}%'.format(100. * auc))
 
-        split_evaluate(labels, scores, filename='./result/detection/ae')
+        # set the threshold using the validation scores
+        valid_labels, valid_scores = zip(*valid_label_score)
+        idxs = np.where(np.array(valid_labels) == 1)
+        normal_scores_valid = np.array(valid_scores)[idxs]
+        th = get_threshold(normal_scores_valid, percent=3)
+        split_evaluate(labels, scores, plot=True, filename='./result/detection/ae', manual_th=th)
+        # split_evaluate(labels, scores, filename='./result/detection/ae')
 
         test_time = time.time() - start_time
         logger.info('Autoencoder testing time: %.3f' % test_time)

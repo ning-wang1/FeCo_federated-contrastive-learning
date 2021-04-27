@@ -253,8 +253,8 @@ def split_evaluate(y, scores, plot, filename, manual_th=None):
     return best_acc, auc_score
 
 
-def get_threshold(scores):
-    threshold =np.percentile(scores, 5)
+def get_threshold(scores, percent):
+    threshold =np.percentile(scores, percent)
     return threshold
 
 
