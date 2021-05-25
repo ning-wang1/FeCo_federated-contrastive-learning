@@ -2,9 +2,11 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
 import pandas as pd
+import os
 import numpy as np
 import itertools
 import sys
+import copy
 from matplotlib import pyplot as plt
 
 from sklearn.preprocessing import StandardScaler
@@ -21,8 +23,9 @@ from sklearn.feature_selection import RFE
 from utils.classifier import evaluate_sub
 import random
 
-FEATURE_NUM = 40  # the number of selected features
+FEATURE_NUM = 35  # the number of selected features
 VALIDATION_SIZE = 5000
+NORMAL_TRAIN_NUM = 20000
 # file paths of training and testing data
 # train_file_path = 'NSL_KDD/KDDTrain+_20Percent.txt'
 # test_file_path = 'NSL_KDD/KDDTest-21.txt'
@@ -343,8 +346,16 @@ def data_partition(x, y, class_col, test, features, attack_class):
     c, r = y_test.values.shape
     y_test = y_test.values.reshape(c, )
     # transform the labels to one-hot
-    y_train = [attack_class[0][1], 1] == y_train[:, None].astype(np.float32)
-    y_test = [attack_class[0][1], 1] == y_test[:, None].astype(np.float32)
+    # y_train = [attack_class[0][1], 1] == y_train[:, None].astype(np.float32)
+    # y_test = [attack_class[0][1], 1] == y_test[:, None].astype(np.float32)
+    y_train = 1 == y_train[:, None].astype(np.float32)
+    y_test = 1 == y_test[:, None].astype(np.float32)
+
+    y_train = y_train.astype(int)
+    y_test = y_test.astype(int)
+    y_train = np.squeeze(y_train)
+    y_test = np.squeeze(y_test)
+
     print('x_train', x_train[0], x_train[0].shape)
     print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DATA PARTITION FINISHED >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
 
@@ -352,7 +363,7 @@ def data_partition(x, y, class_col, test, features, attack_class):
 
 
 def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
-    """ This function subdivides train and test dataset into two-class attack labels
+    """ This function subdivides train and test dataset into two-class attack labels (normal and selected attack)
     return the loc of target attack and normal samples
     """
     j = normal_class[0][0]  # name of normal class
@@ -361,7 +372,12 @@ def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
     v = attack_class[0][1]  # numerical represent of abnormal classes 
     # [('DoS', 0.0), ('Probe', 2.0), ('R2L', 3.0), ('U2R', 4.0)]
     train_set = data_df.loc[(data_df['attack_class'] == k) | (data_df['attack_class'] == v)]
-    # transform the selected features to one-hot
+
+    # augmentation
+    if v==4:
+        for iter in range(10):
+            train_set_aug = data_df.loc[data_df['attack_class'] == v]
+            train_set = pd.concat([train_set, train_set_aug])
 
     class_dict[j + '_' + i].append(train_set)
     # test labels
@@ -369,6 +385,49 @@ def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
     class_dict[j + '_' + i].append(test_set)
 
     return class_dict
+
+
+def get_two_classes_data(x, y, class_col, test_df, features):
+    """ This function subdivides train and test dataset into two-class attack labels (either normal or attacks)
+    return the loc of target attack and normal samples
+    """
+    # [('DoS', 0.0), ('Probe', 2.0), ('R2L', 3.0), ('U2R', 4.0)]
+    print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DATA PARTITION >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    new_col = list(class_col)
+    new_col.append('attack_class')
+
+    # add a dimension to target
+    new_y = y[:, np.newaxis]
+
+    # create a data frame from sampled data
+    data_arr = np.concatenate((x, new_y), axis=1)
+    train_df = pd.DataFrame(data_arr, columns=new_col)
+
+    # transform the selected features to one-hot
+    x_train, x_test, cat_num_dict = oneHot(train_df, test_df, features)
+
+    y_train = train_df[['attack_class']].copy()
+    c, r = y_train.values.shape
+    y_train = y_train.values.reshape(c, )
+    y_test = test_df[['attack_class']].copy()
+    c, r = y_test.values.shape
+    y_test = y_test.values.reshape(c, )
+
+    y_test_multi_class = copy.deepcopy(y_test)
+    # get binary labels
+    y_train = y_train[:, None].astype(np.float32) == 1
+    y_test = y_test[:, None].astype(np.float32) == 1
+
+    y_train = y_train.astype(int)
+    y_test = y_test.astype(int)
+    y_train = np.squeeze(y_train)
+    y_test = np.squeeze(y_test)
+
+    # transform the labels to one-hot
+    print('x_train', x_train[0], x_train[0].shape)
+    print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DATA PARTITION FINISHED >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+
+    return x_train, x_test, y_train, y_test, y_test_multi_class, cat_num_dict
 
 
 def create_class_dict_balance(class_dict, data_df, test_df, normal_class, attack_class):
@@ -382,7 +441,7 @@ def create_class_dict_balance(class_dict, data_df, test_df, normal_class, attack
     # [('DoS', 0.0), ('Probe', 2.0), ('R2L', 3.0), ('U2R', 4.0)]
     train_set_normal = data_df.loc[(data_df['attack_class'] == k)]
     train_set_anormal = data_df.loc[(data_df['attack_class'] == v)]
-    df1 = train_set_normal.sample(frac=0.25)
+    df1 = train_set_normal.sample(frac=0.5)
     train_set = pd.concat([train_set_anormal, df1])
     class_dict[j + '_' + i].append(train_set)
     # test labels
@@ -422,22 +481,40 @@ def feature_selection(x, y, x_col_name, FEATURE_NUM):
 
 
 class NSL_KDD:
-    def __init__(self, attack_class, data_type=None, num_selected_fea=0):
+    def __init__(self, attack_class=None, data_type=None, fea_selection=True):
 
         x, y, x_col_name, test, max_dic, min_dic, scaler = preprocessing()
 
-        if not num_selected_fea == 0:
-            selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
+        if fea_selection:
+            if os.path.exists('./dataset/NSL_KDD/selected_features.npy'):
+                selected_features = np.load('./dataset/NSL_KDD/selected_features.npy')
+            else:
+                selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
+                np.save('./dataset/NSL_KDD/selected_features.npy', selected_features)
         else:
             selected_features = datacols_no_outbound
 
         print('selected_feature>>>>>>>>\n.', selected_features)
-        x_train, x_test, y_train, y_test, cat_num_dict = \
-            data_partition(x, y, x_col_name, test, selected_features, attack_class)
 
-        # from true, false to 0,1
-        y_train = np.argmax(1 * y_train, axis=1)
-        y_test = np.argmax(1 * y_test, axis=1)
+        # split the data
+        if attack_class is None:
+            x_train, x_test, y_train, y_test, y_test_multi_class, cat_num_dict = \
+                get_two_classes_data(x, y, x_col_name, test, selected_features)
+            self.y_test_multi_class = y_test_multi_class
+        else:
+            x_train, x_test, y_train, y_test, cat_num_dict = \
+                data_partition(x, y, x_col_name, test, selected_features, attack_class)
+
+        # train data shuffling
+        train_len = x_train.shape[0]
+        idx = list(range(train_len))
+        random.shuffle(idx)
+        x_train = copy.deepcopy(x_train[idx, :])
+        y_train = copy.deepcopy(y_train[idx])
+
+        # sel_idx = idx[0:NORMAL_TRAIN_NUM]
+        # x_train = copy.deepcopy(x_train[sel_idx, :])
+        # y_train = copy.deepcopy(y_train[sel_idx])
 
         # select a subset
         if data_type == 'normal':
@@ -517,15 +594,22 @@ class NSL_data(Dataset):
 
 
 class NSL_Dataset():
-    def __init__(self, normal_class=1):
+    def __init__(self, normal_class=1, data_partition_type='normalOverAll'):
         super().__init__()
 
         self.n_classes = 2  # 0: normal, 1: outlier
         self.normal_classes = tuple([normal_class])
         self.outlier_classes = [0]
 
-        normal_data = NSL_KDD([('DoS', 0.0)], data_type='normal')
-        data = NSL_KDD([('DoS', 0.0)])
+        attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
+        if data_partition_type is "normalOverAll":
+            data = NSL_KDD()
+            normal_data = NSL_KDD(data_type='normal')
+        else:
+            attack = [(data_partition_type, attack_type[data_partition_type])]
+            data = NSL_KDD(attack)
+            normal_data = NSL_KDD(attack, data_type='normal')
+
         self.train_set = NSL_data(normal_data.train_data, normal_data.train_labels)
         self.valid_set = NSL_data(normal_data.validation_data, normal_data.validation_labels)
         self.test_set = NSL_data(data.test_data, data.test_labels)

@@ -23,9 +23,12 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=float, default=1)
     parser.add_argument("--dataset", help="dataset name", type=str, choices=["mnist", "cifar10", "gtsrb"])
+    parser.add_argument("--data_partition_type", help="whether it is a binary classification (normal or attack)",
+                        default='normalOverAll', choices=["normalOverAll", "DoS", "Probe", "U2R", "R2L"], type=str)
     parser.add_argument("--xp_dir", default='./result', help="directory for the experiment", type=str)
+    parser.add_argument("--plot_dir", default='./result/detection', help="directory for figures", type=str)
     parser.add_argument("--model_name", type=str, default='iso_forest',
-                        choices=["iso_forest", 'kde', 'svm', 'ae'])
+                        choices=["isoForest", 'kde', 'svm', 'ae'])
 
     # for IsoForest
     parser.add_argument("--n_estimators", help="Specify the number of base estimators in the ensemble",
@@ -71,7 +74,7 @@ def get_args():
 
 def main():
     args = get_args()
-    args.model_name = 'svm'
+    args.model_name = 'ae'
     args.seed = 4
     print('Options: {}', args)
 
@@ -79,35 +82,43 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
+    attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
+
     # load data
-    data = NSL_KDD([('DoS', 0.0)], data_type=None)
-    normal_data = NSL_KDD([('DoS', 0.0)], data_type='normal')
-    test_labels = data.test_labels * 2 - 1  # (1, 0) to (1, -1)
+    if args.data_partition_type is "normalOverAll":
+        data = NSL_KDD(data_type=None)
+        normal_data = NSL_KDD(data_type='normal')
+    else:
+        attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
+        data = NSL_KDD(attack, data_type=None)
+        normal_data = NSL_KDD(attack, data_type='normal')
 
     if not os.path.exists(args.xp_dir):
         os.mkdir(args.xp_dir)
     assert os.path.exists(args.xp_dir)
+    plot_save_path = os.path.join(args.plot_dir, args.data_partition_type + '_' + args.model_name)
 
     # logging
     logging.basicConfig(level=logging.INFO)
 
-    if args.model_name is 'iso_forest':
+    if args.model_name is 'isoForest':
         # initialize Isolation Forest
         model = IsoForest(args.seed, train_data=normal_data.train_data, test_data=data.test_data,
-                          test_labels=test_labels, n_estimators=args.n_estimators,
+                          test_labels=data.test_labels, n_estimators=args.n_estimators,
                           max_samples=args.max_samples, contamination=args.contamination)
         # train model and predict
         model.train()
-        model.predict()
+        model.predict(save_path=plot_save_path)
 
     elif args.model_name is 'kde':
         # initialize KDE
-        model = KDE(train_data=normal_data.train_data, test_data=data.test_data, test_labels=test_labels,
+        model = KDE(train_data=normal_data.train_data, test_data=data.test_data,
+                    test_labels=data.test_labels,
                     kernel=args.kde_kernel)
 
         # train KDE model and predict
         model.train(bandwidth_GridSearchCV=bool(args.kde_GridSearchCV))
-        model.predict()
+        model.predict(save_path=plot_save_path)
 
     elif args.model_name is 'svm':
         # initialize OC-SVM
@@ -117,14 +128,14 @@ def main():
         model.train(GridSearch=args.svm_GridSearchCV)
 
         # predict scores
-        model.predict(which_set='test')
+        model.predict(save_path=plot_save_path, which_set='test')
 
     elif args.model_name is 'ae':
         device = args.device
         if not torch.cuda.is_available():
             device = 'cpu'
 
-        dataset = NSL_Dataset(normal_class=1)
+        dataset = NSL_Dataset(normal_class=1, data_partition_type=args.data_partition_type)
 
         # train autoencoder on dataset
         model = NSL_MLP_Autoencoder()

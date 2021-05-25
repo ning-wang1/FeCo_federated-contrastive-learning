@@ -3,7 +3,7 @@ from torch import nn
 from models import mobilenet, mlp
 
 
-def generate_model(args):
+def generate_model(args, input_size):
     assert args.model_type in ['resnet', 'shufflenet', 'shufflenetv2', 'mobilenet', 'mobilenetv2', 'mlp']
 
     if args.model_type == 'mobilenet':
@@ -14,7 +14,7 @@ def generate_model(args):
         )
     elif args.model_type == 'mlp':
         # model = mlp.get_model(input_size=121, layer1_size=128, layer2_size=256, output_size=512)
-        model = mlp.get_model(input_size=121, layer1_size=128, layer2_size=256, output_size=args.latent_dim)
+        model = mlp.get_model(input_size=input_size, layer1_size=128, layer2_size=256, output_size=args.latent_dim)
     model = nn.DataParallel(model, device_ids=None)
 
     if args.use_cuda:

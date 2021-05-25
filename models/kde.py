@@ -97,7 +97,7 @@ class KDE(object):
         self.stop_clock()
         self.train_time = self.clocked
 
-    def predict(self):
+    def predict(self, save_path):
         X = self.test_data
         y = ((self.test_labels + 1) / 2).astype(int)
 
@@ -124,7 +124,7 @@ class KDE(object):
         self.diag['scores'][(i + 1) * batch_size:, 0] = scores.flatten()
 
         # show the accuracy on normal set and anormal set separately
-        split_evaluate(y, self.diag['scores'].flatten(), filename='./result/detection/kde')
+        split_evaluate(y, self.diag['scores'].flatten(), plot=True, filename=save_path)
 
         self.stop_clock()
         self.test_time = self.clocked

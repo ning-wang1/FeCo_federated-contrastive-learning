@@ -232,7 +232,7 @@ class SVM(object):
         self.stop_clock()
         self.train_time = self.clocked
 
-    def predict(self, which_set='train', **kwargs):
+    def predict(self, save_path, which_set='train', **kwargs):
 
         assert which_set in ('train', 'val', 'test')
 
@@ -299,7 +299,7 @@ class SVM(object):
         print('acc test', self.diag[which_set]['acc'][-1])
 
         # show the accuracy on normal set and anormal set separately
-        split_evaluate(y, scores.flatten(), plot=True, filename='./result/detection/svm' + self.loss)
+        split_evaluate(y, scores.flatten(), plot=True, filename=save_path + self.loss)
 
         self.stop_clock()
         if which_set == 'test':

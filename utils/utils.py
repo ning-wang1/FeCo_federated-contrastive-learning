@@ -188,22 +188,17 @@ def get_score(score_folder):
 
 
 def split_evaluate(y, scores, plot, filename, manual_th=None):
-    if not os.path.exists('./result/detection'):
-        os.mkdir('./result/detection')
     # compute FPR TPR
-    print("    detailed detection results ----------------->")
+
     fpr, tpr, thresholds = roc_curve(y, scores)
     # compute auc score
     auc_score = auc(fpr, tpr)
     if plot:
         plot_roc(fpr, tpr, auc_score, filename)
 
-    print('    AUC test: {:.3f}'.format(auc_score))
-    pos = np.where(fpr <= 0.05)[0]
-    print('    Set FPR=0.05, TPR={:.3f}'.format(tpr[pos[-1]]))
-    pos = np.where(fpr <= 0.1)[0]
-    print('    Set FPR=0.1, TPR={:.3f}'.format(tpr[pos[-1]]))
-
+    pos1 = np.where(fpr <= 0.05)[0]
+    pos2 = np.where(fpr <= 0.1)[0]
+    print(f'AUC: {auc_score}, TPR(FPR=0.05): {tpr[pos1[-1]]}, TPR(FPR=0.1): {tpr[pos2[-1]]}')
     # if the labels y is with 1, -1, then transform them to 1, 0
     if -1 in y:
         y = ((y + 1)/2).astype(int)
@@ -234,11 +229,11 @@ def split_evaluate(y, scores, plot, filename, manual_th=None):
     idx = np.argmax(acc)
     best_threshold = thresholds[idx]
 
-    print('    Best Accuracy: {:.3f}, Corresponding Threshold: {:.3f}'.format(best_acc, best_threshold))
-    print('    Split Acc under the Best Acc: normal_acc={:.3f}, anormal_acc={:.3f}'.format(acc_n[idx], acc_a[idx]))
+    print('Best ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}'.
+          format(best_acc, best_threshold, acc_n[idx], acc_a[idx]))
 
     if manual_th is not None:
-        print(f'manually set threshold is: {manual_th}')
+        print(f'Manually choose decision threshold: {manual_th}')
         y_pred = scores > manual_th
         correct = y_pred == y
         correct_a = np.sum(correct[np.where(y == 0)])
@@ -247,10 +242,44 @@ def split_evaluate(y, scores, plot, filename, manual_th=None):
         acc_n = correct_n / total_n
         acc_a = correct_a / total_a
         acc = (correct_n + correct_a) / (total_n + total_a)
-        print('    Accuracy: {:.3f}, Corresponding Threshold: {:.3f}'.format(acc, manual_th))
-        print('    Split Acc under the Best Acc: normal_acc={:.3f}, anormal_acc={:.3f}'.format(acc_n, acc_a))
+        print('ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}'.
+              format(acc, manual_th, acc_n, acc_a))
 
-    return best_acc, auc_score
+    return best_acc, acc, auc_score
+
+
+def per_class_acc(y, scores, manual_th):
+    """ evaluate the prediction by showing per class accuracy
+     param: y is the true label taking (0, 1, 2, 3, 4) where 'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0
+     param: scores is the prediction scores
+     param: manual_th: the manually selected threshold for decision making """
+
+    # if not os.path.exists('./result/detection'):
+    #     os.mkdir('./result/detection')
+
+    print('The class wise accuracy')
+
+    y_pred = (scores > manual_th).astype(int)
+    false_normal = 0
+
+    # get the scores of normal data
+    idxes = np.where(y == 1)
+    y_pred_normal = y_pred[idxes]
+    true_normal = np.sum(y_pred_normal)
+    false_attack = len(y_pred_normal) - true_normal
+
+    attacks = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
+    for attack_type, attack_id in attacks.items():
+        idxes = np.where(y == attack_id)
+        y_pred_attack = y_pred[idxes]
+        fn = np.sum(y_pred_attack)
+        tp = len(y_pred_attack) - fn
+        recall = tp / (tp + fn)
+        false_normal += fn
+
+        print(f'{attack_type} Attack, Recall: {recall:.3f}')
+
+    print(f'Normal traffic data, Recall: {true_normal/len(y_pred_normal):.3f}, Precision {true_normal/(true_normal + false_normal)}')
 
 
 def get_threshold(scores, percent):

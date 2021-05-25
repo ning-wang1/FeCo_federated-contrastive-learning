@@ -75,7 +75,7 @@ class IsoForest(object):
         self.stop_clock()
         self.train_time = self.clocked
 
-    def predict(self):
+    def predict(self, save_path):
         X = self.test_data
         y = self.test_labels
 
@@ -100,7 +100,7 @@ class IsoForest(object):
         print('acc test', self.diag['acc'][-1])
 
         # show the accuracy on normal set and anormal set separately
-        split_evaluate(y, scores.flatten(), filename='./result/detection/iso_forest')
+        split_evaluate(y, scores.flatten(), plot=True, filename=save_path)
 
         self.stop_clock()
         self.test_time = self.clocked

@@ -2,6 +2,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 import os
+import random
 import numpy as np
 import argparse
 
@@ -16,68 +17,7 @@ from model import generate_model
 from models import mlp
 # from models import resnet, shufflenet, shufflenetv2, mobilenet, mobilenetv2
 import ast
-from utils.utils import split_evaluate
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='DAD training on Videos')
-
-    parser.add_argument('--mode', default='test', type=str, help='train | test(validation)')
-    parser.add_argument('--root_path', default='', type=str, help='root path of the dataset')
-    parser.add_argument('--resume_path', default='', type=str, help='path of previously trained model')
-    parser.add_argument('--latent_dim', default=64, type=int, help='contrastive learning dimension')
-    parser.add_argument('--feature_dim', default=128, type=int, help='To which dimension will video clip be embedded')
-
-    parser.add_argument('--model_type', default='mlp', type=str, help='so far only resnet')
-    parser.add_argument('--model_depth', default=18, type=int, help='Depth of resnet (18 | 50 | 101)')
-    parser.add_argument('--shortcut_type', default='B', type=str, help='Shortcut type of resnet (A | B)')
-    parser.add_argument('--use_cuda', default=True, type=ast.literal_eval, help='If true, cuda is used.')
-
-    parser.add_argument('--epochs', default=20, type=int, help='Number of total epochs to run')
-    parser.add_argument('--val_step', default=4, type=int, help='validate per val_step epochs')
-    parser.add_argument('--save_step', default=4, type=int, help='checkpoint will be saved every save_step epochs')
-    parser.add_argument('--n_train_batch_size', default=5, type=int, help='Batch Size for normal training data')
-    parser.add_argument('--a_train_batch_size', default=200, type=int, help='Batch Size for anormal training data')
-    parser.add_argument('--val_batch_size', default=25, type=int, help='Batch Size for validation data')
-    parser.add_argument('--learning_rate', default=0.001, type=float,
-                        help='Initial learning rate (divided by 10 while training by lr scheduler)')
-    parser.add_argument('--lr_decay', default=100, type=int,
-                        help='Number of epochs after which learning rate will be reduced to 1/10 of original value')
-    parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
-    parser.add_argument('--dampening', default=0.0, type=float, help='dampening of SGD')
-    parser.add_argument('--weight_decay', default=1e-4, type=float, help='Weight Decay')
-
-    parser.add_argument('--n_threads', default=1, type=int, help='num of workers loading dataset')
-    parser.add_argument('--tracking', default=True, type=ast.literal_eval,
-                        help='If true, BN uses tracking running stats')
-    parser.add_argument('--cal_vec_batch_size', default=20, type=int,
-                        help='batch size for calculating normal driving average vector.')
-
-    parser.add_argument('--tau', default=0.03, type=float,
-                        help='a temperature parameter that controls the concentration level of the distribution of embedded vectors')
-    parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
-    parser.add_argument('--memory_bank_size', default=200, type=int, help='Memory bank size')
-    parser.add_argument('--nesterov', action='store_true', help='Nesterov momentum')
-    parser.set_defaults(nesterov=False)
-
-    parser.add_argument('--checkpoint_folder', default='./checkpoints/', type=str, help='folder to store checkpoints')
-    parser.add_argument('--log_folder', default='./logs/', type=str, help='folder to store log files')
-    parser.add_argument('--log_resume', default=False, type=ast.literal_eval, help='True|False: a flag controlling whether to create a new log file')
-    parser.add_argument('--normvec_folder', default='./normvec/', type=str, help='folder to store norm vectors')
-    parser.add_argument('--score_folder', default='./result/score/', type=str, help='folder to store scores')
-    parser.add_argument('--Z_momentum', default=0.9, help='momentum for normalization constant Z updates')
-    parser.add_argument('--groups', default=3, type=int, help='hyper-parameters when using shufflenet')
-    parser.add_argument('--width_mult', default=2.0, type=float,
-                        help='hyper-parameters when using shufflenet|mobilenet')
-
-    parser.add_argument('--n_split_ratio', default=1.0, type=float,
-                        help='the ratio of normal driving samples will be used during training')
-    parser.add_argument('--a_split_ratio', default=1.0, type=float,
-                        help='the ratio of normal driving samples will be used during training')
-    parser.add_argument('--window_size', default=6, type=int, help='the window size for post-processing')
-
-    args = parser.parse_args()
-    return args
+from utils.utils import split_evaluate, per_class_acc
 
 
 def train(train_normal_loader, train_anormal_loader, model, model_head, nce_average, criterion, optimizer, epoch, args,
@@ -147,36 +87,40 @@ def train(train_normal_loader, train_anormal_loader, model, model_head, nce_aver
     return memory_bank, losses.avg
 
 
-if __name__ == '__main__':
-    args = parse_args()
+def main(args):
     if not os.path.exists(args.checkpoint_folder):
         os.makedirs(args.checkpoint_folder)
+    if not os.path.exists(args.result_folder):
+        os.mkdir(args.result_folder)
     if not os.path.exists(args.log_folder):
         os.makedirs(args.log_folder)
     if not os.path.exists(args.normvec_folder):
         os.makedirs(args.normvec_folder)
     if not os.path.exists(args.score_folder):
         os.makedirs(args.score_folder)
-    torch.manual_seed(args.manual_seed)
-    if args.use_cuda:
-        torch.cuda.manual_seed(args.manual_seed)
+
     if args.nesterov:
         dampening = 0
     else:
         dampening = args.dampening
 
-    anormal_data = NSL_KDD([('DoS', 0.0)], data_type='anomaly')
-    normal_data = NSL_KDD([('DoS', 0.0)], data_type='normal')
-    all_data = NSL_KDD([('DoS', 0.0)], data_type=None)
+    attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
+
+    if args.data_partition_type is "normalOverAll":
+        all_data = NSL_KDD(data_type=None)
+        normal_data = NSL_KDD(data_type='normal')
+        anormal_data = NSL_KDD(data_type='anomaly')
+    else:
+        attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
+        all_data = NSL_KDD(attack, data_type=None)
+        normal_data = NSL_KDD(attack, data_type='normal')
+        anormal_data = NSL_KDD(attack, data_type='anomaly')
 
     if args.mode == 'train':
         print("=================================Loading Anormaly Training Data!=================================")
         training_anormal_data = NSL_data(anormal_data.train_data, anormal_data.train_labels)
         training_anormal_size = int(len(training_anormal_data) * args.a_split_ratio)
         training_anormal_data = torch.utils.data.Subset(training_anormal_data, np.arange(training_anormal_size))
-        a = anormal_data.train_data
-        b = all_data.train_data
-        a = training_anormal_data[1]
 
         train_anormal_loader = torch.utils.data.DataLoader(
             training_anormal_data,
@@ -235,7 +179,7 @@ if __name__ == '__main__':
 
         if args.resume_path == '':
             # ===============generate new model or pre-trained model===============
-            model = generate_model(args)
+            model = generate_model(args, input_size=all_data.train_data.shape[1])
             optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum,
                                         dampening=dampening, weight_decay=args.weight_decay, nesterov=args.nesterov)
             nce_average = NCEAverage(args.feature_dim, len_neg, len_pos, args.tau, args.Z_momentum)
@@ -246,7 +190,7 @@ if __name__ == '__main__':
         else:
             # ===============load previously trained model ===============
             args.pre_train_model = False
-            model = generate_model(args)
+            model = generate_model(args, input_size=all_data.train_data.shape[1])
             resume_path = os.path.join(args.checkpoint_folder, args.resume_path)
             resume_checkpoint = torch.load(resume_path)
             model.load_state_dict(resume_checkpoint['state_dict'])
@@ -360,8 +304,9 @@ if __name__ == '__main__':
         score_folder = args.score_folder
         args.pre_train_model = False
 
-        model = generate_model(args)
-        resume_path = './checkpoints/best_model_' + args.model_type + '.pth'
+        model = generate_model(args, input_size=all_data.train_data.shape[1])
+        resume_path = os.path.join(args.checkpoint_folder,
+                                   f'best_model_{args.model_type}.pth')
         # model_id = 9
         # resume_path = './checkpoints/' + args.model_type + '_{}.pth'.format(model_id*10)
         resume_checkpoint = torch.load(resume_path)
@@ -411,7 +356,7 @@ if __name__ == '__main__':
 
         # compute a decision-making threshold using the validation dataset
         valid_scores = cal_score(model, normal_vec, validation_loader, None, args.use_cuda)
-        th = get_threshold(valid_scores, percent=3)
+        th = get_threshold(valid_scores, percent=8)
         print(f'the threshold is set as {th}')
 
         # evaluating the scores of the test dataset and show the IDS performance
@@ -419,6 +364,83 @@ if __name__ == '__main__':
         score = get_score(score_folder)
         best_acc, best_threshold, AUC = evaluate(score, all_data.test_labels, False, model_id='best')
         print(f'Best Acc: {round(best_acc, 2)} | Threshold: {round(best_threshold, 2)} | AUC: {round(AUC, 4)}')
-        split_evaluate(all_data.test_labels, score, plot=True, filename='./result/detection/contrastive', manual_th=th)
+        split_evaluate(all_data.test_labels, score, plot=True,
+                       filename=f'{args.result_folder}contrastive', manual_th=th)
+        per_class_acc(all_data.y_test_multi_class, score, th)
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='DAD training on Videos')
+
+    parser.add_argument('--mode', default='test', type=str, help='train | test(validation)')
+    parser.add_argument('--resume_path', default='', type=str, help='path of previously trained model')
+    parser.add_argument('--latent_dim', default=64, type=int, help='contrastive learning dimension')
+    parser.add_argument('--feature_dim', default=128, type=int, help='To which dimension will video clip be embedded')
+
+    parser.add_argument("--data_partition_type", help="whether it is a binary classification (normal or attack)",
+                        default='normalOverAll', choices=["normalOverAll", "DoS", "Probe", "U2R", "R2L"], type=str)
+
+    parser.add_argument('--model_type', default='mlp', type=str, help='so far only resnet')
+    parser.add_argument('--use_cuda', default=True, type=ast.literal_eval, help='If true, cuda is used.')
+
+    parser.add_argument('--epochs', default=20, type=int, help='Number of total epochs to run')
+    parser.add_argument('--val_step', default=4, type=int, help='validate per val_step epochs')
+    parser.add_argument('--save_step', default=4, type=int, help='checkpoint will be saved every save_step epochs')
+    parser.add_argument('--n_train_batch_size', default=5, type=int, help='Batch Size for normal training data')
+    parser.add_argument('--a_train_batch_size', default=200, type=int, help='Batch Size for anormal training data')
+    parser.add_argument('--val_batch_size', default=25, type=int, help='Batch Size for validation data')
+    parser.add_argument('--learning_rate', default=0.001, type=float,
+                        help='Initial learning rate (divided by 10 while training by lr scheduler)')
+    parser.add_argument('--lr_decay', default=100, type=int,
+                        help='Number of epochs after which learning rate will be reduced to 1/10 of original value')
+    parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
+    parser.add_argument('--dampening', default=0.0, type=float, help='dampening of SGD')
+    parser.add_argument('--weight_decay', default=1e-4, type=float, help='Weight Decay')
+
+    parser.add_argument('--n_threads', default=1, type=int, help='num of workers loading dataset')
+    parser.add_argument('--tracking', default=True, type=ast.literal_eval,
+                        help='If true, BN uses tracking running stats')
+    parser.add_argument('--cal_vec_batch_size', default=20, type=int,
+                        help='batch size for calculating normal driving average vector.')
+
+    parser.add_argument('--tau', default=0.03, type=float,
+                        help='a temperature parameter that controls the concentration level of the distribution of embedded vectors')
+    parser.add_argument('--manual_seed', default=1, type=int, help='Manually set random seed')
+    parser.add_argument('--memory_bank_size', default=200, type=int, help='Memory bank size')
+    parser.add_argument('--nesterov', action='store_true', help='Nesterov momentum')
+    parser.set_defaults(nesterov=False)
+
+    parser.add_argument('--checkpoint_folder', default='./checkpoints/centralized/', type=str, help='folder to store checkpoints')
+    parser.add_argument('--result_folder', default='./result/centralized/', type=str, help='folder_to_store_results')
+    parser.add_argument('--log_folder', default='./logs/centralized/', type=str, help='folder to store log files')
+    parser.add_argument('--log_resume', default=False, type=ast.literal_eval, help='True|False: a flag controlling whether to create a new log file')
+    parser.add_argument('--normvec_folder', default='./normvec/centralized/', type=str, help='folder to store norm vectors')
+    parser.add_argument('--score_folder', default='./result/centralized/score/', type=str, help='folder to store scores')
+    parser.add_argument('--Z_momentum', default=0.9, help='momentum for normalization constant Z updates')
+
+    parser.add_argument('--n_split_ratio', default=1.0, type=float,
+                        help='the ratio of normal driving samples will be used during training')
+    parser.add_argument('--a_split_ratio', default=1.0, type=float,
+                        help='the ratio of normal driving samples will be used during training')
+    parser.add_argument('--window_size', default=6, type=int, help='the window size for post-processing')
+
+    args = parser.parse_args()
+    return args
+
+
+if __name__ == '__main__':
+    args = parse_args()
+
+    random.seed(args.manual_seed)
+    np.random.seed(args.manual_seed)
+    torch.manual_seed(args.manual_seed)
+    if args.use_cuda:
+        torch.cuda.manual_seed(args.manual_seed)
+
+    args.data_partition_type = 'normalOverAll'
+    args.mode = 'test'
+    args.epochs = 10
+    args.val_step = 10
+    args.save_step = 10
+    main(args)
 
