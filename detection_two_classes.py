@@ -223,11 +223,11 @@ if __name__ == '__main__':
     testloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
     # train and test the self-built MLP model
-    # mlp_model = train_ids(data.input_shape, trainloader, validloader, testloader, save_folder=args.model_folder)
-    # y_pred = mlp_predict(mlp_model, testloader)
-    # y_pred = np.argmax(y_pred, axis=1)
-    # present_split_acc(y_pred, data.test_labels)
-    # split_evaluate(data.test_labels, y_pred[:, 1], plot=True, filename=args.plot_folder)
+    mlp_model = train_ids(data.input_shape, trainloader, validloader, testloader, save_folder=args.model_folder)
+    y_pred = mlp_predict(mlp_model, testloader)
+    y_pred = np.argmax(y_pred, axis=1)
+    present_split_acc(y_pred, data.test_labels)
+    split_evaluate(data.test_labels, y_pred[:, 1], plot=True, filename=args.plot_folder)
 
     # train other models including SVM LG BNB DT
     model_names = ['LGR', 'KNN', 'BNB', 'SVM', 'DTC', 'MLP']

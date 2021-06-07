@@ -8,6 +8,7 @@ import itertools
 import sys
 import copy
 from matplotlib import pyplot as plt
+import seaborn as sns
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
@@ -17,6 +18,13 @@ from collections import defaultdict
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFE
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import f_regression
+from sklearn.feature_selection import mutual_info_regression
+
+from scipy.stats import spearmanr
+from scipy.cluster import hierarchy
 
 # from keras.models import Sequential
 # from keras.layers import Dense
@@ -29,6 +37,9 @@ NORMAL_TRAIN_NUM = 20000
 # file paths of training and testing data
 # train_file_path = 'NSL_KDD/KDDTrain+_20Percent.txt'
 # test_file_path = 'NSL_KDD/KDDTest-21.txt'
+
+binary_col = ["land", "is_host_login", "is_guest_login", "logged_in", "root_shell"]
+categorical_col = ['protocol_type', 'service', 'flag']
 
 sys.path.append('../')
 train_file_path = 'dataset/NSL_KDD/KDDTrain+.txt'
@@ -124,6 +135,16 @@ def preprocessing(scaler_name=SCALER):
                'xsnoop': 'R2L', 'xlock': 'R2L', 'sendmail': 'R2L',
                'normal': 'Normal'
                }
+    attack_train = df_train['attack'].tolist()
+    attack_test = df_test['attack'].tolist()
+    print('\nAttacks in the training set')
+    for attack_name in mapping.keys():
+        if attack_name in attack_train:
+            print(attack_name)
+    print('\nAttacks in the testing Set')
+    for attack_name in mapping.keys():
+        if attack_name in attack_test:
+            print(attack_name)
 
     # Apply attack class mappings to the dataset
     df_train['attack_class'] = df_train['attack'].apply(lambda v: mapping[v])
@@ -132,10 +153,6 @@ def preprocessing(scaler_name=SCALER):
     # Drop attack field from both train and test data
     df_train.drop(['attack'], axis=1, inplace=True)
     df_test.drop(['attack'], axis=1, inplace=True)
-
-    # 'num_outbound_cmds' field has all 0 values. Hence, it will be removed from both train and test dataset
-    df_train.drop(['num_outbound_cmds'], axis=1, inplace=True)
-    df_test.drop(['num_outbound_cmds'], axis=1, inplace=True)
 
     # Attack Class Distribution
     attack_class_freq_train = df_train[['attack_class']].apply(lambda x: x.value_counts())
@@ -153,57 +170,35 @@ def preprocessing(scaler_name=SCALER):
     # plot.set_title("Attack Class Distribution", fontsize=20)
     # plot.grid(color='lightgray', alpha=0.5)
 
+    cols = df_train.select_dtypes(include=['float64', 'int64']).columns
+    cols_minus_binary = list(set(cols) - (set(cols) & set(binary_col)))
+
     if scaler_name is 'std_scale':
         # Scaling Numerical Attributes
         scaler = StandardScaler()
         # extract numerical attributes and scale it to have zero mean and unit variance
-        cols = df_train.select_dtypes(include=['float64', 'int64']).columns
-        print(len(cols))
-        scaler.fit(df_train[cols])
-        train_numerical = scaler.transform(df_train[cols])
-        test_numerical = scaler.transform(df_test[cols])
+        scaler.fit(df_train[cols_minus_binary])
+        train_numerical = scaler.transform(df_train[cols_minus_binary])
+        test_numerical = scaler.transform(df_test[cols_minus_binary])
 
-        # calculate the min value and max value of different features
-        max_v = []
-        max_dic = {}
-        [max_v.append(datacols_range_continous[col]) for col in cols]
-        max_v_df = pd.DataFrame(np.array(max_v).reshape(1, len(max_v)), columns=cols)
-        max_v = scaler.transform(max_v_df)
-
-        for i in range(max_v.shape[1]):
-            max_dic[cols[i]] = max_v[0, i]
-
-        min_v = []
-        min_dic = {}
-        [min_v.append(0) for col in cols]
-        min_v_df = pd.DataFrame(np.array(min_v).reshape(1, len(min_v)), columns=cols)
-        min_v = scaler.transform(min_v_df)
-        # check = scaler.inverse_transform(min_v)
-
-        for i in range(min_v.shape[1]):
-            min_dic[cols[i]] = min_v[0, i]
     else:
         # extract numerical attributes and scale it to have zero mean and unit variance
         cols = df_train.select_dtypes(include=['float64', 'int64']).columns
-        max_v = []
-        min_v = []
-        [max_v.append(datacols_range_continous[col]) for col in cols]
-        [min_v.append(0) for col in cols]
-        scaler = MinMax(max_v=np.array(max_v), min_v=np.array(min_v))
-        train_numerical = scaler.transform(df_train[cols].values)
-        test_numerical = scaler.transform(df_test[cols].values)
-        min_dic = {}
-        max_dic = {}
-        for i in range(len(min_v)):
-            min_dic[cols[i]] = 0
-            max_dic[cols[i]] = 1.0
         min_max_scaler = MinMaxScaler()
         train_numerical = min_max_scaler.fit_transform(df_train[cols].values)
         test_numerical = min_max_scaler.transform(df_test[cols].values)
 
     # turn the result back to a data frame
-    train_numerical_df = pd.DataFrame(train_numerical, columns=cols)
-    test_numerical_df = pd.DataFrame(test_numerical, columns=cols)
+    train_numerical_df = pd.DataFrame(train_numerical, columns=cols_minus_binary)
+    test_numerical_df = pd.DataFrame(test_numerical, columns=cols_minus_binary)
+
+    # cols with binary values
+    scaler = StandardScaler()
+    scaler.fit(df_train[binary_col])
+    train_binary = scaler.transform(df_train[binary_col])
+    test_binary = scaler.transform(df_test[binary_col])
+    train_binary_df = pd.DataFrame(train_binary, columns=binary_col)
+    test_binary_df = pd.DataFrame(test_binary, columns=binary_col)
 
     # Encoding of categorical Attributes
     encoder = LabelEncoder()
@@ -217,8 +212,10 @@ def preprocessing(scaler_name=SCALER):
     # data sampling
     # define columns and extract encoded train set for sampling
     x_train_categorical = train_categorical.drop(['attack_class'], axis=1)
-    class_col = pd.concat([train_numerical_df, x_train_categorical], axis=1).columns
-    x_train = np.concatenate((train_numerical, x_train_categorical.values), axis=1)
+    train = pd.concat([train_numerical_df, train_binary_df, x_train_categorical], axis=1)
+    class_col = train.columns
+
+    x_train = np.concatenate((train_numerical, train_binary_df.values, x_train_categorical.values), axis=1)
     x = x_train
     y_train = train_categorical[['attack_class']].copy()
     c, r = y_train.values.shape
@@ -229,7 +226,7 @@ def preprocessing(scaler_name=SCALER):
     # x, y = ros.fit_sample(x, y)
 
     # create test data frame
-    test = pd.concat([test_numerical_df, test_categorical], axis=1)
+    test = pd.concat([test_numerical_df, test_binary_df, test_categorical], axis=1)
     test['attack_class'] = test['attack_class'].astype(np.float64)
     test['protocol_type'] = test['protocol_type'].astype(np.float64)
     test['flag'] = test['flag'].astype(np.float64)
@@ -238,7 +235,11 @@ def preprocessing(scaler_name=SCALER):
     print('Original dataset shape {}'.format(Counter(df_train)))
     print('Resampled dataset shape {}'.format(x.shape))
 
-    return x, y, class_col, test, max_dic, min_dic, scaler
+    return x, y, class_col, test, scaler
+
+
+def preprocessing_scale():
+    pass
 
 
 def oneHot(train_data, test_data, features, col_names=('protocol_type', 'service', 'flag')):
@@ -374,7 +375,7 @@ def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
     train_set = data_df.loc[(data_df['attack_class'] == k) | (data_df['attack_class'] == v)]
 
     # augmentation
-    if v==4:
+    if v==4 or v==3:
         for iter in range(10):
             train_set_aug = data_df.loc[data_df['attack_class'] == v]
             train_set = pd.concat([train_set, train_set_aug])
@@ -413,10 +414,14 @@ def get_two_classes_data(x, y, class_col, test_df, features):
     c, r = y_test.values.shape
     y_test = y_test.values.reshape(c, )
 
+    y_train_multi_class = copy.deepcopy(y_train)
     y_test_multi_class = copy.deepcopy(y_test)
     # get binary labels
     y_train = y_train[:, None].astype(np.float32) == 1
     y_test = y_test[:, None].astype(np.float32) == 1
+
+    y_train_multi_class = y_train_multi_class.astype(int)
+    y_test_multi_class = y_test_multi_class.astype(int)
 
     y_train = y_train.astype(int)
     y_test = y_test.astype(int)
@@ -427,7 +432,7 @@ def get_two_classes_data(x, y, class_col, test_df, features):
     print('x_train', x_train[0], x_train[0].shape)
     print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DATA PARTITION FINISHED >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
 
-    return x_train, x_test, y_train, y_test, y_test_multi_class, cat_num_dict
+    return x_train, x_test, y_train, y_test, y_train_multi_class, y_test_multi_class, cat_num_dict
 
 
 def create_class_dict_balance(class_dict, data_df, test_df, normal_class, attack_class):
@@ -468,6 +473,7 @@ def feature_selection(x, y, x_col_name, FEATURE_NUM):
     # plot significance
     plt.rcParams['figure.figsize'] = (11, 4)
     significance.plot.bar()
+    plt.show()
 
     # create the RFE model and select 10 attributes
     rfe = RFE(rfc, FEATURE_NUM)
@@ -480,27 +486,166 @@ def feature_selection(x, y, x_col_name, FEATURE_NUM):
     return selected_features
 
 
+def variance_check(x_train, col_names):
+    x_train = abs(x_train)
+    print(x_train.shape)
+    var_filter = VarianceThreshold(threshold=0)
+    train = var_filter.fit_transform(x_train)
+    print(f'the variance of the features are {var_filter.variances_}')
+    print(f'the features names are {col_names}')
+    # to get the count of features that are not constant
+    a = var_filter.get_support()
+    print(f'removed features are {[col_names[i] for i in range(x_train.shape[1]) if not var_filter.get_support()[i]]}')
+
+    col_names = col_names[var_filter.get_support()]
+    return train, col_names
+
+
+def correlation_check(x, col_name, th):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
+    corr, _ = spearmanr(x)
+    corr_linkage = hierarchy.ward(corr)
+    dendro = hierarchy.dendrogram(corr_linkage, labels=col_name, ax=ax1, leaf_rotation=90)
+    dendro_idx = np.arange(0, len(dendro['ivl']))
+
+    ax2.imshow(corr[dendro['leaves'], :][:, dendro['leaves']])
+    ax2.set_xticks(dendro_idx)
+    ax2.set_yticks(dendro_idx)
+    ax2.set_xticklabels(dendro['ivl'], rotation='vertical')
+    ax2.set_yticklabels(dendro['ivl'])
+    fig.tight_layout()
+    plt.show()
+    fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlation.pdf')
+
+    cluster_ids = hierarchy.fcluster(corr_linkage, th, criterion='distance')
+    cluster_id_to_feature_ids = defaultdict(list)
+    for idx, cluster_id in enumerate(cluster_ids):
+        cluster_id_to_feature_ids[cluster_id].append(idx)
+
+    for v in cluster_id_to_feature_ids.values():
+        if len(v) > 1:
+            fig = plt.figure(figsize=[5, 4])
+            sns.distplot(x[:, v[0]], color='g', label=col_name[v[0]])
+            sns.distplot(x[:, v[1]], color='r', label=col_name[v[1]])
+            plt.legend(loc='best')
+            fig.tight_layout()
+            fig.subplots_adjust(top=0.95)
+            plt.show()
+
+    selected_features = [v[0] for v in cluster_id_to_feature_ids.values()]
+    removed_features = set(col_name) - set(col_name[selected_features])
+    print(f'removed features are {removed_features}')
+
+    x = x[:, selected_features]
+    new_features = col_name[selected_features]
+
+    return x, new_features
+
+
+def anova(X_train, y_train, col_name, k):
+    fvalue_selector = SelectKBest(f_regression, k=k)  # select features with 20 best ANOVA F-Values
+    X_train_new = fvalue_selector.fit_transform(X_train, y_train)
+    mask = fvalue_selector.get_support()
+    new_features = [col_name[i] for i in range(mask.shape[0]) if mask[i]]
+
+    y = np.array(fvalue_selector.scores_)
+    print(f'anova scores {y}')
+    idx = np.argsort(y)
+
+    fig, ax1 = plt.subplots(1, 1, figsize=(12, 8))
+    plt.bar([col_name[i] for i in idx], y[idx])
+    ax1.set_xticks(np.arange(len(col_name)))
+    ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
+    plt.show()
+
+    idx = idx[0:14]
+    fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
+    plt.bar([col_name[i] for i in idx], y[idx])
+    ax1.set_xticks(np.arange(len(idx)))
+    ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
+    plt.show()
+
+    return new_features
+
+
+def mutual_information(x_train, y_train, col_name, k):
+
+    selector = SelectKBest(mutual_info_regression, k=k)
+    selector.fit(x_train, y_train)
+    # to get names of the selected features
+    mask = selector.get_support()  # Output   array([False, False,  True,  True,  True, False ....])
+    new_features = [col_name[i] for i in range(mask.shape[0]) if mask[i]]
+
+    y = np.array(selector.scores_)
+    print(f'mutual information scores {y}')
+    idx = np.argsort(y)
+
+    fig, ax1 = plt.subplots(1, 1, figsize=(5, 4))
+    plt.bar([col_name[i] for i in idx], y[idx])
+    ax1.set_xticks(np.arange(len(col_name)))
+    ax1.set_xticklabels([col_name[i] for i in idx], rotation=50)
+    plt.show()
+
+    return new_features
+
+
+def plot_pdf(data, y):
+    fig = plt.figure(figsize=(5,4))
+
+    sns.distplot(data[y == 1], color='g', label='benign')
+    sns.distplot(data[y == 0], color='r', label='malignant')
+    plt.legend(loc='best')
+    fig.suptitle('Breast Cance Data Analysis')
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.95)
+    plt.show()
+
+
+def shuffle_data(array):
+    length = array.shape[0]
+    idx = list(range(length))
+    random.shuffle(idx)
+    new_arr = array[idx]
+    return new_arr
+
+
 class NSL_KDD:
     def __init__(self, attack_class=None, data_type=None, fea_selection=True):
 
-        x, y, x_col_name, test, max_dic, min_dic, scaler = preprocessing()
+        x, y, x_col_name, test, scaler = preprocessing()
 
         if fea_selection:
             if os.path.exists('./dataset/NSL_KDD/selected_features.npy'):
-                selected_features = np.load('./dataset/NSL_KDD/selected_features.npy')
+                selected_features = np.load('./dataset/NSL_KDD/selected_features.npy', allow_pickle=True)
             else:
-                selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
+                # selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
+                x, x_col_name1 = variance_check(x, x_col_name)
+                x, x_col_name2 = correlation_check(x, x_col_name1, th=0.2)
+                # selected_features = feature_selection(x, y, x_col_name2, FEATURE_NUM-3)
+
+                cate_features = binary_col + categorical_col
+                l2 = len(cate_features)
+                numerical_features = [fea for fea in x_col_name2 if fea not in cate_features]
+                l1 = len(numerical_features)
+
+                # for categorical features and numerical feature
+                selected_features_categorical = mutual_information(x[:, l1:], y, cate_features, k=l2 - 3)
+                selected_features_numerical = anova(x[:, 0: l1], y, numerical_features, k=l1 - 5)
+
+                selected_features = selected_features_numerical + selected_features_categorical
                 np.save('./dataset/NSL_KDD/selected_features.npy', selected_features)
         else:
             selected_features = datacols_no_outbound
 
-        print('selected_feature>>>>>>>>\n.', selected_features)
+        print('selected_features -----------\n.', selected_features)
+        print('removed features -------------\n', list(set(x_col_name) - set(selected_features)))
 
         # split the data
         if attack_class is None:
-            x_train, x_test, y_train, y_test, y_test_multi_class, cat_num_dict = \
+            x_train, x_test, y_train, y_test, y_train_multi_class, y_test_multi_class, cat_num_dict = \
                 get_two_classes_data(x, y, x_col_name, test, selected_features)
             self.y_test_multi_class = y_test_multi_class
+            y_train_multi_class = y_train_multi_class
         else:
             x_train, x_test, y_train, y_test, cat_num_dict = \
                 data_partition(x, y, x_col_name, test, selected_features, attack_class)
@@ -511,6 +656,7 @@ class NSL_KDD:
         random.shuffle(idx)
         x_train = copy.deepcopy(x_train[idx, :])
         y_train = copy.deepcopy(y_train[idx])
+        y_train_multi_class = copy.deepcopy(y_train_multi_class[idx])
 
         # sel_idx = idx[0:NORMAL_TRAIN_NUM]
         # x_train = copy.deepcopy(x_train[sel_idx, :])
@@ -533,19 +679,10 @@ class NSL_KDD:
         x_train = np.copy(x_train[idx_train])
         x_test = np.copy(x_test[idx_test])
 
-        max_v = []
-        min_v = []
-        categorical_features = ['protocol_type', 'service', 'flag']  # 3, 70, 11
-
-        numerical_features = []
-        for col in datacols:
-            if col in selected_features and not col in categorical_features:
-                numerical_features.append(col)
-
-        [max_v.append(max_dic[col]) for col in numerical_features]
-        [min_v.append(min_dic[col]) for col in numerical_features]
-        max_v.extend(np.ones(x_train.shape[1] - len(numerical_features)))
-        min_v.extend(np.zeros(x_train.shape[1] - len(numerical_features)))
+        # numerical_features = []
+        # for col in datacols:
+        #     if col in selected_features and not col in categorical_features:
+        #         numerical_features.append(col)
 
         self.test_data = x_test
         self.test_labels = y_test
@@ -554,9 +691,9 @@ class NSL_KDD:
         self.validation_labels = y_train[:VALIDATION_SIZE]
         self.train_data = x_train[VALIDATION_SIZE:, ]
         self.train_labels = y_train[VALIDATION_SIZE:]
+        self.y_train_multi_class = y_train_multi_class[VALIDATION_SIZE:]
+        self.y_valid_multi_class = y_train_multi_class[:VALIDATION_SIZE]
 
-        self.max_v = np.array(max_v)  # the maximum value of each numerical feature
-        self.min_v = np.array(min_v)  # the minimum value of each numerical feature
         self.scaler = scaler
         self.FEATURE_NUM_FINAL = x_train.shape[1]
 
@@ -583,9 +720,10 @@ class NSL_data(Dataset):
     def __init__(self, x, y):
         self.data = x
         self.labels = y
+        self.length = x.shape[0]
 
     def __len__(self):
-        return len(self.labels)
+        return self.length
 
     def __getitem__(self, idx):
         record = self.data[idx, :]
@@ -617,11 +755,11 @@ class NSL_Dataset():
     def loaders(self, batch_size: int, shuffle_train=True, shuffle_test=False, num_workers: int = 0) ->(
             DataLoader, DataLoader):
         train_loader = DataLoader(dataset=self.train_set, batch_size=batch_size, shuffle=shuffle_train,
-                                  num_workers=num_workers)
+                                  num_workers=0)
         test_loader = DataLoader(dataset=self.test_set, batch_size=batch_size, shuffle=shuffle_test,
-                                 num_workers=num_workers)
+                                 num_workers=0)
         valid_loader = DataLoader(dataset=self.valid_set, batch_size=batch_size, shuffle=shuffle_test,
-                                 num_workers=num_workers)
+                                  num_workers=0)
         return train_loader, test_loader, valid_loader
 
 

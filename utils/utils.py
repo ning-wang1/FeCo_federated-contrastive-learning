@@ -187,7 +187,7 @@ def get_score(score_folder):
     return score
 
 
-def split_evaluate(y, scores, plot, filename, manual_th=None):
+def split_evaluate(y, scores, plot=False, filename=None, manual_th=None, perform_dict=None):
     # compute FPR TPR
 
     fpr, tpr, thresholds = roc_curve(y, scores)
@@ -198,14 +198,15 @@ def split_evaluate(y, scores, plot, filename, manual_th=None):
 
     pos1 = np.where(fpr <= 0.05)[0]
     pos2 = np.where(fpr <= 0.1)[0]
-    print(f'AUC: {auc_score}, TPR(FPR=0.05): {tpr[pos1[-1]]}, TPR(FPR=0.1): {tpr[pos2[-1]]}')
+    print(f'AUC: {auc_score}, TPR(FPR=0.05): {tpr[pos1[-1]]}, TPR(FPR=0.1): {tpr[pos2[-1]]}\n')
     # if the labels y is with 1, -1, then transform them to 1, 0
     if -1 in y:
         y = ((y + 1)/2).astype(int)
 
     # save scores to file
     labels_scores = np.concatenate((y.reshape(-1, 1), scores.reshape(-1, 1)), axis=1)
-    np.save(file=filename+'_labels_scores.npy', arr=labels_scores)
+    if filename is not None:
+        np.save(file=filename+'_labels_scores.npy', arr=labels_scores)
 
     # get the accuracy
     total_correct_a = np.zeros(len(thresholds))
@@ -229,7 +230,7 @@ def split_evaluate(y, scores, plot, filename, manual_th=None):
     idx = np.argmax(acc)
     best_threshold = thresholds[idx]
 
-    print('Best ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}'.
+    print('Best ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}\n'.
           format(best_acc, best_threshold, acc_n[idx], acc_a[idx]))
 
     if manual_th is not None:
@@ -242,13 +243,26 @@ def split_evaluate(y, scores, plot, filename, manual_th=None):
         acc_n = correct_n / total_n
         acc_a = correct_a / total_a
         acc = (correct_n + correct_a) / (total_n + total_a)
-        print('ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}'.
+        print('ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}\n'.
               format(acc, manual_th, acc_n, acc_a))
 
+        recall = correct_a/total_a
+        precision = correct_a/(total_n-correct_n+correct_a)
+        fpr = (total_n - correct_n)/total_n
+
+        print('Recall: {:.3f} | Precision: {:.3f} | fpr={:.3f} \n'.
+              format(recall, precision, fpr))
+        if perform_dict is not None:
+            perform_dict['threshold'] = manual_th
+            perform_dict['auc'] = auc_score
+            perform_dict['acc'] = acc
+            perform_dict['recall'] = recall
+            perform_dict['precision'] = precision
+            perform_dict['fpr'] = fpr
     return best_acc, acc, auc_score
 
 
-def per_class_acc(y, scores, manual_th):
+def per_class_acc(y, scores, manual_th, perform_dict=None):
     """ evaluate the prediction by showing per class accuracy
      param: y is the true label taking (0, 1, 2, 3, 4) where 'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0
      param: scores is the prediction scores
@@ -260,26 +274,31 @@ def per_class_acc(y, scores, manual_th):
     print('The class wise accuracy')
 
     y_pred = (scores > manual_th).astype(int)
-    false_normal = 0
+    fn_all = 0
+    tp_all = 0
 
     # get the scores of normal data
     idxes = np.where(y == 1)
     y_pred_normal = y_pred[idxes]
-    true_normal = np.sum(y_pred_normal)
-    false_attack = len(y_pred_normal) - true_normal
+    tn_all = np.sum(y_pred_normal)
+    fp_all = len(y_pred_normal) - tn_all
 
     attacks = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
     for attack_type, attack_id in attacks.items():
-        idxes = np.where(y == attack_id)
-        y_pred_attack = y_pred[idxes]
+        idxes = np.where(y == attack_id)  # the index for ground truth attack
+        y_pred_attack = y_pred[idxes]   # the prediction on ground-truth-attack
         fn = np.sum(y_pred_attack)
         tp = len(y_pred_attack) - fn
         recall = tp / (tp + fn)
-        false_normal += fn
+        fn_all += fn
+        tp_all += tp
 
-        print(f'{attack_type} Attack, Recall: {recall:.3f}')
+        print(f'{attack_type} Attack, Recall: {recall:.3f}, total test num: {len(y_pred_attack)}')
+        if perform_dict is not None:
+            perform_dict[attack_type] = recall
 
-    print(f'Normal traffic data, Recall: {true_normal/len(y_pred_normal):.3f}, Precision {true_normal/(true_normal + false_normal)}')
+    print(f'Overall recall {tp_all/(tp_all + fn_all)}')
+    print(f'Normal traffic data, Recall: {tn_all/len(y_pred_normal):.3f}, Precision {tn_all/(tn_all + fn_all)}')
 
 
 def get_threshold(scores, percent):
@@ -297,7 +316,36 @@ def plot_roc(fpr, tpr, auc_score, filename):
     plt.xticks(np.arange(0, 1.01, step=0.2))
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.legend([os.path.split(filename)[-1] + ' (AUC)={0:5.2f}'.format(auc_score), 'None'])
+    if 'contrastive' in filename:
+        line_label = 'contrastive'
+    else:
+        line_label = os.path.split(filename)[-1]
+    plt.legend([line_label + ' (AUC)={0:5.2f}'.format(auc_score), 'None'])
     plt.show()
     f.savefig(filename + '.pdf')
+
+
+def check_recall(recall_ls, recall_all):
+    data_num = [9711, 7458, 2421, 2754, 200]
+    recall_all_compute = 0
+    for idx, num in enumerate(data_num):
+        recall_all_compute += num * recall_ls[idx]
+    recall_all_compute = recall_all_compute/sum(data_num)
+    print(f'the computed overall recall is {recall_all_compute}, the reported on is {recall_all} ')
+
+
+def cal_metrics(num_per_class, recall_per_class, fpr):
+    tp = 0
+    neg = 9711
+    pos = 12833
+    for i, r in enumerate(recall_per_class):
+        tp += num_per_class[i] * r
+    fp = neg * fpr
+    tn = neg - fp
+    fn = pos - tp
+    recall = tp/pos
+    acc = (tp + tn)/(neg + pos)
+    precision = tp / (tp + fp)
+    f1 = recall * precision * 2 / (recall + precision)
+    print(f'acc: {acc}, recall: {recall}, precision: {precision}, f1: {f1}')
 

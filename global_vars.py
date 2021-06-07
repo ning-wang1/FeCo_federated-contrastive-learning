@@ -29,12 +29,12 @@ def init(learning_type='fl'):
     parser.add_argument('--val_batch_size', default=25, type=int, help='Batch Size for validation data')
     parser.add_argument('--learning_rate', default=0.001, type=float,
                         help='Initial learning rate (divided by 10 while training by lr scheduler)')
-    parser.add_argument('--lr_decay', default=100, type=int,
+    parser.add_argument('--lr_decay', default=30, type=int,
                         help='Number of epochs after which learning rate will be reduced to 1/10 of original value')
     parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
     parser.add_argument('--dampening', default=0.0, type=float, help='dampening of SGD')
     parser.add_argument('--weight_decay', default=1e-4, type=float, help='Weight Decay')
-    parser.add_argument('--n_threads', default=8, type=int, help='num of workers loading dataset')
+    parser.add_argument('--n_threads', default=1, type=int, help='num of workers loading dataset')
     parser.add_argument('--tracking', default=True, type=ast.literal_eval,
                         help='If true, BN uses tracking running stats')
     parser.add_argument('--cal_vec_batch_size', default=20, type=int,
@@ -66,6 +66,9 @@ def init(learning_type='fl'):
     parser.add_argument('--a_split_ratio', default=1.0, type=float,
                         help='the ratio of normal driving samples will be used during training')
     parser.add_argument('--window_size', default=6, type=int, help='the window size for post-processing')
+
+    parser.add_argument('--local_epochs', default=5, type=int, help='a param for fl, the epochs in a local client')
+    parser.add_argument('--print_local_acc', default=False, type=ast.literal_eval, help='If true, cuda is used.' )
 
     global args
     args = parser.parse_args()

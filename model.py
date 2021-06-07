@@ -13,7 +13,7 @@ def generate_model(args, input_size):
             pre_train=args.pre_train_model
         )
     elif args.model_type == 'mlp':
-        # model = mlp.get_model(input_size=121, layer1_size=128, layer2_size=256, output_size=512)
+        # model = mlp.get_model(input_size=input_size, layer1_size=128, layer2_size=256, output_size=args.latent_dim)
         model = mlp.get_model(input_size=input_size, layer1_size=128, layer2_size=256, output_size=args.latent_dim)
     model = nn.DataParallel(model, device_ids=None)
 

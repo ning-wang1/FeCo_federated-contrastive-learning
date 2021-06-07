@@ -19,7 +19,7 @@ def average_weights(w):
     return w_avg
 
 
-def test_inference(args, model, train_normal, valid_normal, test_data, test_labels, plot, file_path=None):
+def test_inference(args, model, train_normal, valid_normal, test_data):
     model.eval()
     # Test inference after completion of training
     train_normal_loader_for_test = torch.utils.data.DataLoader(
@@ -49,14 +49,10 @@ def test_inference(args, model, train_normal, valid_normal, test_data, test_labe
                                    args.latent_dim,
                                    args.use_cuda)
     np.save(os.path.join(args.normvec_folder, 'normal_vec.npy'), normal_vec.cpu().numpy())
-    cal_score(model, normal_vec, test_loader, args.score_folder, args.use_cuda)
 
     valid_scores = cal_score(model, normal_vec, validation_loader, None, args.use_cuda)
-    th = get_threshold(valid_scores, percent=10)
+    th = get_threshold(valid_scores, percent=3)
 
-    score = get_score(args.score_folder)
+    score = cal_score(model, normal_vec, test_loader, args.score_folder, args.use_cuda)
 
-    _, acc, _ = split_evaluate(
-        test_labels, score, plot=plot, filename=file_path,  manual_th=th)
-
-    return score, th, acc
+    return score, th

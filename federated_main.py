@@ -2,16 +2,15 @@ import torch
 import torch.backends.cudnn as cudnn
 
 import os
-import ast
+import csv
 import random
 import numpy as np
-import argparse
 import global_vars as gv
 from tqdm import tqdm
 import copy
 
 from utils.data_split import get_dataset
-from utils.utils import Logger, per_class_acc
+from utils.utils import Logger, per_class_acc, split_evaluate
 from utils.setup_NSL import NSL_KDD, NSL_data
 from model import generate_model
 from models import mlp
@@ -53,40 +52,44 @@ def main(args):
     memory_bank = [[] for i in range(args.num_users)]
 
     # setup logger
-    batch_logger = Logger(os.path.join(args.log_folder, 'batch.log'), ['epoch', 'batch', 'loss', 'probs', 'lr'],
-                          args.log_resume)
-    epoch_logger = Logger(os.path.join(args.log_folder, 'epoch.log'), ['epoch', 'loss', 'probs', 'lr'],
-                          args.log_resume)
+    batch_logger = [Logger(os.path.join(args.log_folder, f'client{i}_batch.log'),
+                           ['epoch', 'batch', 'loss', 'probs', 'lr'], args.log_resume)
+                    for i in range(args.num_users)]
+    epoch_logger = [Logger(os.path.join(args.log_folder, f'client{i}_epoch.log'),
+                           ['round', 'epoch', 'loss', 'probs', 'lr'],
+                    args.log_resume) for i in range(args.num_users)]
 
     checkpoint_path = os.path.join(args.checkpoint_folder,
                                    f'best_model_{args.model_type}.pth')
     head_checkpoint_path = os.path.join(args.checkpoint_folder,
                                         f'best_model_{args.model_type}_head.pth')
+    save_name = f'{args.data_distribution}_lr{args.learning_rate}_clients{args.num_users}_seed{args.manual_seed}_epochs{args.epochs}_le{args.local_epochs}_frac{args.frac}'
 
     train_loss, train_accuracy = [], []
-    print_every = 2
+    rounds = int(args.epochs/args.local_epochs)
 
     if args.mode is 'train':
-        for epoch in tqdm(range(args.epochs)):
+        for r in tqdm(range(rounds)):
             local_weights, local_head_weights, local_losses = [], [], []
-            print(f'\n | Global Training Round : {epoch + 1} |\n')
 
             global_model.train()
             m = max(int(args.frac * args.num_users), 1)
             idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
-            for idx in idxs_users:
-                print('\n-------------------- Local Training of Client {} Starts!! ----------------------'.format(idx))
+            for num, idx in enumerate(idxs_users):
+                print(f'\nGlobal Training Round : {r + 1} |--------({num}/{len(idxs_users)})'
+                      + f'Clients Completed, Local Training of Client {idx} Starts!! ')
                 local_model = LocalUpdate(args, idxs_normal=user_groups_normal[idx],
                                           idxs_anormal=user_groups_anormal[idx],
                                           dataset_normal=train_normal,
                                           dataset_anormal=train_anormal,
-                                          batch_logger=batch_logger,
-                                          epoch_logger=epoch_logger,
+                                          batch_logger=batch_logger[idx],
+                                          epoch_logger=epoch_logger[idx],
                                           memory_bank=memory_bank[idx])
                 w, w_head, memory_bank[idx], loss = local_model.update_weights(model=copy.deepcopy(global_model),
                                                                                model_head=copy.deepcopy(model_head),
-                                                                               epoch=epoch)
+                                                                               training_round=r,
+                                                                               epoch_num=args.local_epochs)
                 local_weights.append(copy.deepcopy(w))
                 local_head_weights.append(copy.deepcopy(w_head))
                 local_losses.append(copy.deepcopy(loss))
@@ -102,37 +105,15 @@ def main(args):
             loss_avg = sum(local_losses) / len(local_losses)
             train_loss.append(loss_avg)
 
-            # Calculate avg training accuracy over all users at every epoch
-            list_acc, list_loss = [], []
-            global_model.eval()
-            for c in range(args.num_users):
-                print(f'\nEvaluating Performance of Client {c}')
-                local_model = LocalUpdate(args, idxs_normal=user_groups_normal[c],
-                                          idxs_anormal=user_groups_anormal[c],
-                                          dataset_normal=train_normal,
-                                          dataset_anormal=train_anormal,
-                                          batch_logger=batch_logger,
-                                          epoch_logger=epoch_logger,
-                                          memory_bank=memory_bank[c])
+            # Calculate avg validation accuracy over all users at every round
+            print(f'\nValidation Accuracy After {r + 1} Rounds of Federated Learning:')
+            score, th = test_inference(args, global_model, train_normal, valid_normal, valid_data)
+            _, acc_current, _ = split_evaluate(valid_labels, score, manual_th=th)
 
-                acc = local_model.inference(model=global_model)
-                list_acc.append(acc)
-
-            train_accuracy.append(sum(list_acc) / len(list_acc))
-
-            # print global training loss after every 'i' rounds
-            if (epoch + 1) % print_every == 0:
-                print(f' \nAvg Training Stats after {epoch + 1} global rounds:')
-                print(f'Training Loss : {np.mean(np.array(train_loss))}')
-                print('Train Accuracy: {:.2f}% \n'.format(100 * train_accuracy[-1]))
-
-            print(f'\nValidation Accuracy after {epoch + 1} global rounds:')
-            _, _, acc_current = test_inference(args, global_model, train_normal, valid_normal,
-                                               valid_data, valid_labels,
-                                               plot=False, file_path=args.result_folder+'contrastive')
+            # decide whether to stop the train
             if acc_current < valid_acc_best:
                 if acc_current < valid_acc_best - 0.01:
-                    print('>>>>>>>>>>>>>>>>> stop the current training as the performance degrades!!!!')
+                    print('!!!!!!!!!!!!!!!!!!! stop the current training as the performance degrades!!!!')
                     break
             else:
                 states = {'state_dict': global_model.state_dict()}
@@ -141,10 +122,30 @@ def main(args):
                 states_head = {'state_dict': model_head.state_dict()}
                 torch.save(states_head, head_checkpoint_path)
 
-        print('\n------------------Test inference after completion of training --------------------')
-        score, th, acc = test_inference(args, global_model, train_normal, valid_normal, test_data, test_labels,
-                                        plot=True, file_path=args.result_folder+'contrastive')
-        per_class_acc(all_data.y_test_multi_class, score, th)
+            print(f'\n---------------------Test inference after {r+1} rounds of training -----------------------')
+            performance_dict = dict()
+            performance_dict['round'] = r+1
+            score, th = test_inference(args, global_model, train_normal, valid_normal, test_data)
+
+            split_evaluate(test_labels, score, plot=True,
+                           filename=f'{args.result_folder}contrastive_r{r}' + save_name,
+                           manual_th=th,
+                           perform_dict=performance_dict)
+            per_class_acc(all_data.y_test_multi_class, score, th, perform_dict=performance_dict)
+
+            if r == 0:
+                with open(f'{args.score_folder}metrics_' + save_name + '.csv', 'w') as f:
+                    writer = csv.DictWriter(f, fieldnames=performance_dict.keys())
+                    writer.writeheader()
+                    writer.writerow(performance_dict)
+            else:
+                with open(f'{args.score_folder}metrics_' + save_name + '.csv', 'a+') as f:
+                    writer = csv.DictWriter(f, fieldnames=performance_dict.keys())
+                    writer.writerow(performance_dict)
+            if (r+1) * args.local_epochs % args.lr_decay == 0:
+                lr = args.learning_rate * (0.1 ** (r * args.local_epochs // args.lr_decay))
+                args.learning_rate = lr
+                print(f'New learning rate: {lr}')
 
     elif args.mode is 'test':
         model = generate_model(args, input_size=all_data.train_data.shape[1])
@@ -152,8 +153,10 @@ def main(args):
         resume_checkpoint = torch.load(resume_path)
         model.load_state_dict(resume_checkpoint['state_dict'])
 
-        score, th, acc = test_inference(args, model, train_normal, valid_normal, test_data, test_labels,
-                                        plot=True, file_path=args.result_folder+'contrastive')
+        score, th = test_inference(args, model, train_normal, valid_normal, test_data)
+        split_evaluate(test_labels, score, plot=True,
+                       filename=f'{args.result_folder}contrastive_final',
+                       manual_th=th)
         per_class_acc(all_data.y_test_multi_class, score, th)
 
 
@@ -167,11 +170,16 @@ if __name__ == "__main__":
     if args.use_cuda:
         torch.cuda.manual_seed(args.manual_seed)
 
-    args.mode = 'test'
     args.data_partition_type = 'normalOverAll'
-    args.epochs = 2
-    args.val_step = 10
-    args.save_step = 10
+    args.data_distribution = 'iid'
+    args.learning_rate = 0.001
+    args.num_users = 50
+    args.local_epochs = 2
+    args.epochs = 80
+    args.frac = 0.1
 
+    args.mode = 'train'
     main(args)
+    # args.mode = 'test'
+    # main(args)
 
