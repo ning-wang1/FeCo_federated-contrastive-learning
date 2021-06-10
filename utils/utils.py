@@ -1,11 +1,13 @@
 import csv
 import numpy as np
+import random
 import os
 import torch
 from torch import nn
 import matplotlib.pyplot as plt
 from sklearn import metrics
 from sklearn.metrics import auc, roc_auc_score, roc_curve
+from sklearn.semi_supervised import LabelSpreading
 
 
 def l2_normalize(x, dim=1):
@@ -15,6 +17,14 @@ def l2_normalize(x, dim=1):
 def adjust_learning_rate(optimizer, lr_rate):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr_rate
+
+
+def set_random_seed(manual_seed, use_cuda):
+    random.seed(manual_seed)
+    np.random.seed(manual_seed)
+    torch.manual_seed(manual_seed)
+    if use_cuda:
+        torch.cuda.manual_seed(manual_seed)
 
 
 class Logger(object):
@@ -250,8 +260,8 @@ def split_evaluate(y, scores, plot=False, filename=None, manual_th=None, perform
         precision = correct_a/(total_n-correct_n+correct_a)
         fpr = (total_n - correct_n)/total_n
 
-        print('Recall: {:.3f} | Precision: {:.3f} | fpr={:.3f} \n'.
-              format(recall, precision, fpr))
+        print('Recall: {:.3f} | Precision: {:.3f} | fpr={:.3f} | f1={:.3f} \n'.
+              format(recall, precision, fpr, 2*recall*precision/(recall+precision)))
         if perform_dict is not None:
             perform_dict['threshold'] = manual_th
             perform_dict['auc'] = auc_score
@@ -260,6 +270,47 @@ def split_evaluate(y, scores, plot=False, filename=None, manual_th=None, perform
             perform_dict['precision'] = precision
             perform_dict['fpr'] = fpr
     return best_acc, acc, auc_score
+
+
+def split_evaluate_two_steps(consist_pred, y, scores, manual_th=None, perform_dict=None):
+    # compute FPR TPR
+    total_a = 12833
+    total_n = 9711
+    # if the labels y is with 1, -1, then transform them to 1, 0
+    if -1 in y:
+        y = ((y + 1)/2).astype(int)
+
+    y_pred = np.zeros(len(consist_pred))
+    if manual_th is not None:
+        print(f'Manually choose decision threshold: {manual_th}')
+        idx1 = np.where(scores > manual_th)
+        y_pred[idx1] = np.ones(len(idx1))
+
+        idx2 = np.where(consist_pred[:, 1] > 0.966)
+        idx22 = np.where(scores <= manual_th)
+
+        idx3 = list(set(list(idx2[0])) & set(list(idx22[0])))
+        y_pred[idx3] = np.ones(len(idx3))
+
+        correct = y_pred == y
+        correct_a = np.sum(correct[np.where(y == 0)])
+        correct_n = np.sum(correct[np.where(y == 1)])
+
+        acc = (correct_n + correct_a) / (len(y))
+
+        recall = correct_a/total_a
+        precision = correct_a/(total_n-correct_n+correct_a)
+        fpr = (total_n - correct_n)/total_n
+
+        print('Recall: {:.3f} | Precision: {:.3f} | fpr={:.3f} | f1={:.3f} \n'.
+              format(recall, precision, fpr, 2*recall*precision/(recall+precision)))
+        if perform_dict is not None:
+            perform_dict['threshold'] = manual_th
+            perform_dict['acc'] = acc
+            perform_dict['recall'] = recall
+            perform_dict['precision'] = precision
+            perform_dict['fpr'] = fpr
+    return acc
 
 
 def per_class_acc(y, scores, manual_th, perform_dict=None):
@@ -348,4 +399,6 @@ def cal_metrics(num_per_class, recall_per_class, fpr):
     precision = tp / (tp + fp)
     f1 = recall * precision * 2 / (recall + precision)
     print(f'acc: {acc}, recall: {recall}, precision: {precision}, f1: {f1}')
+
+
 

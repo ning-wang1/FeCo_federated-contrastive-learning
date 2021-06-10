@@ -10,7 +10,7 @@ from tqdm import tqdm
 import copy
 
 from utils.data_split import get_dataset
-from utils.utils import Logger, per_class_acc, split_evaluate
+from utils.utils import Logger, per_class_acc, split_evaluate, set_random_seed
 from utils.setup_NSL import NSL_KDD, NSL_data
 from model import generate_model
 from models import mlp
@@ -20,7 +20,7 @@ from utils.federated_utils import average_weights, test_inference
 
 
 def main(args):
-
+    set_random_seed(args.manual_seed, args.use_cuda)
     # load dataset and user group
     if args.dataset == 'nsl':
         attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
@@ -163,12 +163,7 @@ def main(args):
 if __name__ == "__main__":
     gv.init('fl')
     args = gv.args
-
-    random.seed(args.manual_seed)
-    np.random.seed(args.manual_seed)
-    torch.manual_seed(args.manual_seed)
-    if args.use_cuda:
-        torch.cuda.manual_seed(args.manual_seed)
+    args.manual_seed = 1
 
     args.data_partition_type = 'normalOverAll'
     args.data_distribution = 'iid'
@@ -180,6 +175,6 @@ if __name__ == "__main__":
 
     args.mode = 'train'
     main(args)
-    # args.mode = 'test'
-    # main(args)
+    args.mode = 'test'
+    main(args)
 

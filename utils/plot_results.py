@@ -127,10 +127,18 @@ def cal_metrics(num_per_class, recall_per_class, fpr):
     print(f'acc: {acc}, recall: {recall}, precision: {precision}, f1: {f1}')
 
 
-def recall1_to_recall2(num_per_class, recall_per_class):
-    total_num = np.sum(num_per_class)
-    pass
+def from_recall_fpr_to_all_metrics(recall, fpr):
+    pos = 12833
+    neg = 9711
+    fp = neg * fpr
+    tp = pos * recall
+    fn = pos - tp
+    tn = neg - fp
+    precision = tp / (tp + fp)
+    acc = (tp + tn) / (pos + neg)
+    f1 = 2 * precision * recall / (precision + recall)
 
+    print(f'Acc: {acc}, recall: {recall}, precision: {precision}, f1: {f1}, fpr: {fpr}')
 
 
 if __name__ == "__main__":
@@ -206,3 +214,8 @@ if __name__ == "__main__":
     # calculate recall
     recall = recall_score(y_true, y_pred)
     print('Recall: %.3f' % recall)
+
+    from_recall_fpr_to_all_metrics(recall=84.86 / 100, fpr=4.86 / 100)
+    from_recall_fpr_to_all_metrics(recall=82 / 100, fpr=5.43 / 100)
+    from_recall_fpr_to_all_metrics(recall=82.37 / 100, fpr=17.62 / 100)
+    from_recall_fpr_to_all_metrics(recall=87.1 / 100, fpr=8.5 / 100)

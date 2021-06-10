@@ -12,6 +12,7 @@ from detection_two_classes import get_acc, early_stop, mlp_predict
 from utils.setup_NSL import NSL_KDD, NSL_data
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.semi_supervised import LabelSpreading
 
 from utils.utils import l2_normalize, get_score, get_threshold
 
@@ -241,10 +242,6 @@ def train_downstream_classifier(args, model, x_train, y_train, x_test, y_test):
     # split_evaluate(data.test_labels, y_pred[:, 1], plot=True, filename=args.plot_folder)
 
 
-def test_on_one():
-    pass
-
-
 def multiclass_test(args, all_data, model):
     attacks = {'Normal': 1.0, 'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
@@ -305,6 +302,56 @@ def multiclass_test(args, all_data, model):
     # split_evaluate(all_data.test_labels, score, plot=True,
     #                filename=f'{args.result_folder}contrastive', manual_th=th, perform_dict=performance_dict)
     # per_class_acc(all_data.y_test_multi_class, score, th, perform_dict=performance_dict)
+
+
+def get_vectors(model, data_loader, data_len, batch_size, latent_dim, use_cuda):
+    total_batch = int(len(data_loader))
+    print("------------------- Collecting Vectors --------------------")
+    if use_cuda:
+        normal_vec = torch.zeros((data_len, latent_dim)).cuda()
+    else:
+        normal_vec = torch.zeros((data_len, latent_dim))
+    for batch, (normal_data, idx) in enumerate(data_loader):
+        if use_cuda:
+            normal_data = normal_data.cuda()
+        _, outputs = model(normal_data.float())
+        outputs = outputs.detach()
+
+        if batch < total_batch - 1:
+            normal_vec[batch * batch_size: (batch + 1) * batch_size] = outputs
+            if (batch + 1) % 1000 == 0:
+                print(f'Calculating Normal Vector: Batch {batch + 1} / {total_batch}')
+        else:
+            normal_vec[batch * batch_size: ] = outputs
+
+    return normal_vec
+
+
+def manifold(train_data, train_labels, test_data, test_labels):
+    print('training consist model')
+    consist_model = LabelSpreading(gamma=3)
+    consist_model.fit(train_data, train_labels)
+    pred_consist = consist_model.predict_proba(test_data)  # the output of consistency model
+
+    return pred_consist
+
+
+def detect_with_manifold(args, model, train_normal, train_anormal, test_dataloader,
+                         normal_len, anormal_len, test_len, test_labels):
+    batch_size = args.cal_vec_batch_size
+    normal_data = get_vectors(model, train_normal, normal_len, batch_size, args.latent_dim, args.use_cuda)
+    anormal_data = get_vectors(model, train_anormal, anormal_len, batch_size, args.latent_dim, args.use_cuda)
+    test_data = get_vectors(model, test_dataloader, test_len, args.val_batch_size, args.latent_dim, args.use_cuda)
+
+    all_data = np.concatenate((normal_data.cpu(), anormal_data.cpu()), axis=0)
+    all_labels = np.concatenate((np.ones(normal_data.shape[0]), np.zeros(anormal_data.shape[0])))
+
+    idx = np.arange(all_data.shape[0])
+    np.random.shuffle(idx)
+    selected_idx = idx[0: 20000]
+
+    pred_consist = manifold(all_data[selected_idx], all_labels[selected_idx], test_data.cpu(), test_labels)
+    return pred_consist
 
 
 

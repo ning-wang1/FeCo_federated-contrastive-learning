@@ -2,13 +2,12 @@ import torch
 import torch.backends.cudnn as cudnn
 
 import os
-import random
 import csv
 import numpy as np
 import global_vars as gv
 
 from test import get_normal_vector, split_acc_diff_threshold, cal_score, cal_score_downstream,\
-    get_new_represent, train_downstream_classifier, multiclass_test
+    get_new_represent, train_downstream_classifier, multiclass_test, detect_with_manifold
 from utils.utils import adjust_learning_rate, AverageMeter, Logger, get_fusion_label, l2_normalize,\
     post_process, evaluate, get_score, get_threshold
 from nce_average import NCEAverage
@@ -17,8 +16,7 @@ from utils.setup_NSL import NSL_KDD, NSL_data
 from model import generate_model
 from models import mlp
 # from models import resnet, shufflenet, shufflenetv2, mobilenet, mobilenetv2
-import ast
-from utils.utils import split_evaluate, per_class_acc, check_recall
+from utils.utils import split_evaluate, per_class_acc, check_recall, set_random_seed, split_evaluate_two_steps
 
 
 def train(train_normal_loader, train_anormal_loader, model, model_head, nce_average, criterion, optimizer, epoch, args,
@@ -89,9 +87,9 @@ def train(train_normal_loader, train_anormal_loader, model, model_head, nce_aver
 
 
 def main(args):
-
+    set_random_seed(args.manual_seed, args.use_cuda)
     if args.nesterov:
-        dampening = 0
+        dampening = 1
     else:
         dampening = args.dampening
 
@@ -306,7 +304,7 @@ def main(args):
 
         model.eval()
 
-        multiclass_test(args, all_data, model)
+        # multiclass_test(args, all_data, model)
 
         print("================================ Loading Normal Data =====================================")
         training_normal_data = NSL_data(normal_data.train_data, normal_data.train_labels)
@@ -321,6 +319,15 @@ def main(args):
             pin_memory=True,
         )
         print(f'train_normal_loader_for_test (size: {len(training_normal_data)})')
+
+        training_anormal_data = NSL_data(anormal_data.train_data, anormal_data.train_labels)
+        train_anormal_loader_for_test = torch.utils.data.DataLoader(
+            training_anormal_data,
+            batch_size=args.cal_vec_batch_size,
+            shuffle=True,
+            num_workers=args.n_threads,
+            pin_memory=True,
+        )
 
         validation_data = NSL_data(normal_data.validation_data, normal_data.validation_labels)
         validation_loader = torch.utils.data.DataLoader(
@@ -341,6 +348,13 @@ def main(args):
             pin_memory=True,
         )
 
+        # normal_len = len(training_normal_data)
+        # anormal_len = len(training_anormal_data)
+        # test_len = len(test_data)
+        # pred_consist = detect_with_manifold(args, model, train_normal_loader_for_test,
+        #                                     train_anormal_loader_for_test, test_loader,
+        #                                     normal_len, anormal_len, test_len, all_data.test_labels)
+
         print("=================================START EVALUATING=========================================")
         normal_vec = get_normal_vector(model, train_normal_loader_for_test,
                                        args.cal_vec_batch_size,
@@ -350,13 +364,15 @@ def main(args):
 
         # compute a decision-making threshold using the validation dataset
         valid_scores = cal_score(model, normal_vec, validation_loader, None, args.use_cuda)
-        th = get_threshold(valid_scores, percent=5)
+        th = get_threshold(valid_scores, percent=6)
         print(f'the threshold is set as {th}')
 
         # evaluating the scores of the test dataset and show the IDS performance
         score_folder = args.score_folder
         cal_score(model, normal_vec, test_loader, score_folder, args.use_cuda)
         score = get_score(score_folder)
+
+        # split_evaluate_two_steps(pred_consist, all_data.test_labels, score, manual_th=th, perform_dict=None)
 
         performance_dict = dict()
         split_evaluate(all_data.test_labels, score, plot=True,
@@ -377,23 +393,20 @@ def main(args):
 if __name__ == '__main__':
     gv.init('centralized')
     args = gv.args
-    args.manual_seed = 2
-
-    random.seed(args.manual_seed)
-    np.random.seed(args.manual_seed)
-    torch.manual_seed(args.manual_seed)
-    if args.use_cuda:
-        torch.cuda.manual_seed(args.manual_seed)
+    args.manual_seed = 3
 
     args.data_partition_type = 'normalOverAll'
 
     if args.data_partition_type is 'normalOverAll':
-        args.epochs = 90
+        args.epochs = 60
         args.val_step = 30
         args.save_step = 30
-        args.tau = 0.05
+        args.tau = 0.03
         args.learning_rate = 0.001
         args.lr_decay = 30
+        args.n_train_batch_size = 5
+        args.a_train_batch_size = 200
+        args.latent_dim = 64
     else:
         args.epochs = 50
         args.val_step = 10
@@ -403,4 +416,4 @@ if __name__ == '__main__':
     main(args)
     args.mode = 'test'
     main(args)
-    # check_recall([94.43, 87.3, 88.2, 42, 70], 84)
+

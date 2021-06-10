@@ -23,13 +23,16 @@ from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import f_regression
 from sklearn.feature_selection import mutual_info_regression
 
-from scipy.stats import spearmanr
-from scipy.cluster import hierarchy
+# from scipy.stats import spearmanr
+# from scipy.cluster import hierarchy
+import scipy.stats
+import scipy.cluster
 
 # from keras.models import Sequential
 # from keras.layers import Dense
 from utils.classifier import evaluate_sub
 import random
+
 
 FEATURE_NUM = 35  # the number of selected features
 VALIDATION_SIZE = 5000
@@ -193,10 +196,10 @@ def preprocessing(scaler_name=SCALER):
     test_numerical_df = pd.DataFrame(test_numerical, columns=cols_minus_binary)
 
     # cols with binary values
-    scaler = StandardScaler()
-    scaler.fit(df_train[binary_col])
-    train_binary = scaler.transform(df_train[binary_col])
-    test_binary = scaler.transform(df_test[binary_col])
+    scaler2 = StandardScaler()
+    scaler2.fit(df_train[binary_col])
+    train_binary = scaler2.transform(df_train[binary_col])
+    test_binary = scaler2.transform(df_test[binary_col])
     train_binary_df = pd.DataFrame(train_binary, columns=binary_col)
     test_binary_df = pd.DataFrame(test_binary, columns=binary_col)
 
@@ -238,10 +241,6 @@ def preprocessing(scaler_name=SCALER):
     return x, y, class_col, test, scaler
 
 
-def preprocessing_scale():
-    pass
-
-
 def oneHot(train_data, test_data, features, col_names=('protocol_type', 'service', 'flag')):
     # translate the features to one hot
     enc = OneHotEncoder()
@@ -250,7 +249,7 @@ def oneHot(train_data, test_data, features, col_names=('protocol_type', 'service
     category_max = [3, 70, 11]
     x_train_1hot = []
     x_test_1hot = []
-    cat_num_dict ={}
+    cat_num_dict = {}
     for col in col_names:
         print(col)
         if col in train_data.columns:  # split the columns to 2 set: one for numerical, another is categorical
@@ -266,7 +265,7 @@ def oneHot(train_data, test_data, features, col_names=('protocol_type', 'service
 
             train_data = train_data_num
             test_data = test_data_num
-        cat_num_dict[col] = x_train_1hot[-1].shape[1]
+            cat_num_dict[col] = x_train_1hot[-1].shape[1]
 
     x_train = train_data_num.values
     x_test = test_data_num.values
@@ -375,10 +374,10 @@ def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
     train_set = data_df.loc[(data_df['attack_class'] == k) | (data_df['attack_class'] == v)]
 
     # augmentation
-    if v==4 or v==3:
-        for iter in range(10):
-            train_set_aug = data_df.loc[data_df['attack_class'] == v]
-            train_set = pd.concat([train_set, train_set_aug])
+    # if v == 4 or v == 3:
+    #     for iter in range(10):
+    #         train_set_aug = data_df.loc[data_df['attack_class'] == v]
+    #         train_set = pd.concat([train_set, train_set_aug])
 
     class_dict[j + '_' + i].append(train_set)
     # test labels
@@ -465,7 +464,7 @@ def feature_selection(x, y, x_col_name, FEATURE_NUM):
     rfc = RandomForestClassifier()
     # fit random forest classifier on the training set
     y = y.reshape(-1, 1)  # reshape the labels
-    rfc.fit(x, y)
+    rfc.fit(x, y[:, 1])
     # extract important features
     score = np.round(rfc.feature_importances_, 3)
     significance = pd.DataFrame({'feature': x_col_name, 'importance': score})
@@ -486,26 +485,34 @@ def feature_selection(x, y, x_col_name, FEATURE_NUM):
     return selected_features
 
 
-def variance_check(x_train, col_names):
+def variance_check(x_train, col_names, plot):
     x_train = abs(x_train)
     print(x_train.shape)
     var_filter = VarianceThreshold(threshold=0)
     train = var_filter.fit_transform(x_train)
     print(f'the variance of the features are {var_filter.variances_}')
     print(f'the features names are {col_names}')
+
+    features = ['srv_rerror_rate', 'rerror_rate', 'serror_rate', 'dst_host_serror_rate', 'srv_serror_rate', 'dst_host_srv_serror_rate']
+    idx = [list(col_names).index(col) for col in features]
+    print(f'variance of {features} are: {var_filter.variances_[idx]}')
+
     # to get the count of features that are not constant
     a = var_filter.get_support()
     print(f'removed features are {[col_names[i] for i in range(x_train.shape[1]) if not var_filter.get_support()[i]]}')
 
     col_names = col_names[var_filter.get_support()]
-    return train, col_names
+    return train, np.array(var_filter.variances_[a]), col_names
 
 
-def correlation_check(x, col_name, th):
+def correlation_check(x, col_name, th, variances, plot):
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
-    corr, _ = spearmanr(x)
-    corr_linkage = hierarchy.ward(corr)
-    dendro = hierarchy.dendrogram(corr_linkage, labels=col_name, ax=ax1, leaf_rotation=90)
+
+    corr, _ = scipy.stats.spearmanr(x)
+    corr_linkage = scipy.cluster.hierarchy.ward(corr)
+
+    dendro = scipy.cluster.hierarchy.dendrogram(corr_linkage, labels=col_name, ax=ax1, leaf_rotation=90)
     dendro_idx = np.arange(0, len(dendro['ivl']))
 
     ax2.imshow(corr[dendro['leaves'], :][:, dendro['leaves']])
@@ -517,22 +524,30 @@ def correlation_check(x, col_name, th):
     plt.show()
     fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlation.pdf')
 
-    cluster_ids = hierarchy.fcluster(corr_linkage, th, criterion='distance')
+    # cluster_ids = hierarchy.fcluster(corr_linkage, th, criterion='distance')
+    cluster_ids = scipy.cluster.hierarchy.fcluster(corr_linkage, th, criterion='distance')
     cluster_id_to_feature_ids = defaultdict(list)
     for idx, cluster_id in enumerate(cluster_ids):
         cluster_id_to_feature_ids[cluster_id].append(idx)
 
-    for v in cluster_id_to_feature_ids.values():
-        if len(v) > 1:
-            fig = plt.figure(figsize=[5, 4])
-            sns.distplot(x[:, v[0]], color='g', label=col_name[v[0]])
-            sns.distplot(x[:, v[1]], color='r', label=col_name[v[1]])
-            plt.legend(loc='best')
-            fig.tight_layout()
-            fig.subplots_adjust(top=0.95)
-            plt.show()
+    selected_features = []
+    if plot:
+        for v in cluster_id_to_feature_ids.values():
+            if len(v) > 1:
+                fig = plt.figure(figsize=[5, 4])
+                sns.distplot(x[:, v[0]], color='g', label=col_name[v[0]])
+                sns.distplot(x[:, v[1]], color='r', label=col_name[v[1]])
+                plt.legend(loc='best')
+                fig.tight_layout()
+                fig.subplots_adjust(top=0.95)
+                plt.show()
+                if variances[v[0]] > variances[v[1]]:
+                    selected_features.append(v[0])
+                else:
+                    selected_features.append(v[1])
+            else:
+                selected_features.append(v[0])
 
-    selected_features = [v[0] for v in cluster_id_to_feature_ids.values()]
     removed_features = set(col_name) - set(col_name[selected_features])
     print(f'removed features are {removed_features}')
 
@@ -544,7 +559,7 @@ def correlation_check(x, col_name, th):
 
 def anova(X_train, y_train, col_name, k):
     fvalue_selector = SelectKBest(f_regression, k=k)  # select features with 20 best ANOVA F-Values
-    X_train_new = fvalue_selector.fit_transform(X_train, y_train)
+    fvalue_selector.fit_transform(X_train, y_train)
     mask = fvalue_selector.get_support()
     new_features = [col_name[i] for i in range(mask.shape[0]) if mask[i]]
 
@@ -553,14 +568,14 @@ def anova(X_train, y_train, col_name, k):
     idx = np.argsort(y)
 
     fig, ax1 = plt.subplots(1, 1, figsize=(12, 8))
-    plt.bar([col_name[i] for i in idx], y[idx])
+    plt.bar([col_name[i] for i in idx], np.log(y[idx]))
     ax1.set_xticks(np.arange(len(col_name)))
     ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
     plt.show()
 
     idx = idx[0:14]
     fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
-    plt.bar([col_name[i] for i in idx], y[idx])
+    plt.bar([col_name[i] for i in idx], np.log(y[idx]))
     ax1.set_xticks(np.arange(len(idx)))
     ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
     plt.show()
@@ -569,7 +584,6 @@ def anova(X_train, y_train, col_name, k):
 
 
 def mutual_information(x_train, y_train, col_name, k):
-
     selector = SelectKBest(mutual_info_regression, k=k)
     selector.fit(x_train, y_train)
     # to get names of the selected features
@@ -589,15 +603,29 @@ def mutual_information(x_train, y_train, col_name, k):
     return new_features
 
 
-def plot_pdf(data, y):
-    fig = plt.figure(figsize=(5,4))
+def plot_pdf(data, y, title_str):
+    fig = plt.figure(figsize=(10, 4))
+    mal_data = data[y == 0]
+    ben_data = data[y == 1]
+    data_range = np.max(data) - np.min(data)
+    all_data =[mal_data, ben_data]
+    labels = ['Intrusion Traffic', 'Normal Traffic']
+    if 'byte' in title_str:
+        plt.hist(all_data, bins=20, range=[0, 2e4], histtype='bar', label=labels, align='left')
+    else:
+        plt.hist(all_data, bins=list(range(3)), histtype='bar', label=labels, align='left')
+        plt.xticks([0, 1, 2])
 
-    sns.distplot(data[y == 1], color='g', label='benign')
-    sns.distplot(data[y == 0], color='r', label='malignant')
+    # n1, bin1, p1 = plt.hist(ben_data, bins=list(range(10)), color='blue', edgecolor='none', align='left', rwidth=0.5)
+    #
+    # n1, bin1, p1 = plt.hist(mal_data, bins=list(range(10)), color='green', edgecolor='none',  align='right', rwidth=0.5)
+
+    # sns.histplot(data[y == 1], color='g', label='benign')
+    # sns.histplot(data[y == 0], color='r', label='malignant')
+
     plt.legend(loc='best')
-    fig.suptitle('Breast Cance Data Analysis')
+    plt.title(title_str)
     fig.tight_layout()
-    fig.subplots_adjust(top=0.95)
     plt.show()
 
 
@@ -609,30 +637,71 @@ def shuffle_data(array):
     return new_arr
 
 
+def plot_ben_mal(col_name, new_features, x, y):
+    removed_features = set(list(col_name)) - set(new_features)
+    y = y.astype(np.float32) == 1
+    # for fea in removed_features:
+    #     plot_pdf(x[fea].values, y, title_str=fea)
+
+    # fig = plt.subplot(figsize=(5, 4))
+    fig, axs = plt.subplots(1, 5, figsize=(10, 4), sharey=True)
+
+    labels = ['Intrusion Traffic', 'Normal Traffic']
+    for i, fea in enumerate(removed_features):
+        x_fea = x[fea].values
+        mal_data = x_fea[y == 0]
+        ben_data = x_fea[y == 1]
+        all_data = [mal_data, ben_data]
+
+        if 'byte' in fea:
+            axs[i].hist(all_data, bins=4, range=[0, 2e4], histtype='bar', label=labels, align='left')
+        else:
+            axs[i].hist(all_data, bins=list(range(3)), histtype='bar', label=labels, align='left')
+            axs[i].set_xticks([0, 1, 2])
+
+        # axs[i].legend(loc='best')
+        axs[i].yaxis.get_major_formatter().set_powerlimits((0, 1))
+        axs[i].set_title(fea)
+    fig.legend(
+               labels=labels,  # The labels for each line
+               borderaxespad=0.5,  # Small spacing around legend box
+               loc='upper right', bbox_to_anchor=(0.75, 0.05), ncol=2)
+    # fig.tight_layout()
+    plt.show()
+
+
 class NSL_KDD:
     def __init__(self, attack_class=None, data_type=None, fea_selection=True):
 
         x, y, x_col_name, test, scaler = preprocessing()
+        df_train = pd.read_csv(train_file_path, sep=",", names=datacols)  # load data
+        df_train_original = df_train.iloc[:, :-1]  # removes an unwanted extra field
 
         if fea_selection:
             if os.path.exists('./dataset/NSL_KDD/selected_features.npy'):
                 selected_features = np.load('./dataset/NSL_KDD/selected_features.npy', allow_pickle=True)
             else:
-                # selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
-                x, x_col_name1 = variance_check(x, x_col_name)
-                x, x_col_name2 = correlation_check(x, x_col_name1, th=0.2)
-                # selected_features = feature_selection(x, y, x_col_name2, FEATURE_NUM-3)
+                # # remove features with zero variance and correlated features
+                # # selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
+                # x, variances, x_col_name1 = variance_check(x, x_col_name, True)
+                # x, x_col_name2 = correlation_check(x, x_col_name1, th=0.2, variances=variances, plot=True)
+                # # selected_features = feature_selection(x, y, x_col_name2, FEATURE_NUM-3)
+                #
+                # cate_features = binary_col + categorical_col
+                # l2 = len(cate_features)
+                # numerical_features = [fea for fea in x_col_name2 if fea not in cate_features]
+                # l1 = len(numerical_features)
+                #
+                # # for categorical features and numerical feature
+                # selected_features_categorical = mutual_information(x[:, l1:], y, cate_features, k=l2 - 3)
+                # selected_features_numerical = anova(x[:, 0: l1], y, numerical_features, k=l1 - 5)
+                # plot_ben_mal(numerical_features, selected_features_numerical, df_train_original, y)
+                #
+                # selected_features = selected_features_numerical + selected_features_categorical
 
-                cate_features = binary_col + categorical_col
-                l2 = len(cate_features)
-                numerical_features = [fea for fea in x_col_name2 if fea not in cate_features]
-                l1 = len(numerical_features)
-
-                # for categorical features and numerical feature
-                selected_features_categorical = mutual_information(x[:, l1:], y, cate_features, k=l2 - 3)
-                selected_features_numerical = anova(x[:, 0: l1], y, numerical_features, k=l1 - 5)
-
-                selected_features = selected_features_numerical + selected_features_categorical
+                removed_features = ['num_compromised', 'num_root', 'dst_byte', 'su_attempted', 'urgent', 'land', 'is_host_login',
+                                    'root_shell', 'rerror_rate', 'serror_rate', 'dst_host_srv_serror_rate', 'num_outbound_cmds']
+                selected_features = list(set(x_col_name) - set(removed_features))
                 np.save('./dataset/NSL_KDD/selected_features.npy', selected_features)
         else:
             selected_features = datacols_no_outbound
@@ -707,7 +776,7 @@ class NSL_KDD:
 
     def get_feature_mean(self):
         y = np.argmax(self.train_labels, axis=1)
-        pos = np.where(y==0)[0]
+        pos = np.where(y == 0)[0]
         x = self.train_data[pos, :37]
         x_inverse = self.scaler.inverse_transform(x)
         feature_mean_val = np.mean(x_inverse, axis=0)
@@ -752,7 +821,7 @@ class NSL_Dataset():
         self.valid_set = NSL_data(normal_data.validation_data, normal_data.validation_labels)
         self.test_set = NSL_data(data.test_data, data.test_labels)
 
-    def loaders(self, batch_size: int, shuffle_train=True, shuffle_test=False, num_workers: int = 0) ->(
+    def loaders(self, batch_size: int, shuffle_train=True, shuffle_test=False, num_workers: int = 0) -> (
             DataLoader, DataLoader):
         train_loader = DataLoader(dataset=self.train_set, batch_size=batch_size, shuffle=shuffle_train,
                                   num_workers=0)
@@ -761,23 +830,6 @@ class NSL_Dataset():
         valid_loader = DataLoader(dataset=self.valid_set, batch_size=batch_size, shuffle=shuffle_test,
                                   num_workers=0)
         return train_loader, test_loader, valid_loader
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # class NSLModel:
 #     def __init__(self, restore, feature_num, session=None):
