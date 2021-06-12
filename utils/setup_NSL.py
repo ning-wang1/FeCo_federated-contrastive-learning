@@ -9,6 +9,7 @@ import sys
 import copy
 from matplotlib import pyplot as plt
 import seaborn as sns
+import textwrap
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
@@ -505,48 +506,175 @@ def variance_check(x_train, col_names, plot):
     return train, np.array(var_filter.variances_[a]), col_names
 
 
+# def correlation_check(x, col_name, th, variances, plot):
+#
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 6), gridspec_kw={
+#                            'width_ratios': [6, 4]})
+#
+#     corr, _ = scipy.stats.spearmanr(x)
+#     corr_linkage = scipy.cluster.hierarchy.ward(corr)
+#
+#     col_idx = np.arange(len(col_name))
+#
+#     # dendro = scipy.cluster.hierarchy.dendrogram(corr_linkage, labels=col_name, ax=ax1, leaf_rotation=90)
+#     dendro = scipy.cluster.hierarchy.dendrogram(corr_linkage, labels=col_idx, ax=ax2, leaf_rotation=90)
+#     dendro_idx = np.arange(0, len(dendro['ivl']))
+#
+#     ax1.imshow(corr[dendro['leaves'], :][:, dendro['leaves']])
+#     ax1.set_xticks(dendro_idx)
+#     ax1.set_yticks(dendro_idx)
+#     ax1.set_xticklabels(dendro['ivl'], rotation='vertical')
+#     ax1.set_yticklabels(dendro['ivl'])
+#     fig.tight_layout()
+#
+#     # cluster_ids = hierarchy.fcluster(corr_linkage, th, criterion='distance')
+#     cluster_ids = scipy.cluster.hierarchy.fcluster(corr_linkage, th, criterion='distance')
+#     cluster_id_to_feature_ids = defaultdict(list)
+#     for idx, cluster_id in enumerate(cluster_ids):
+#         cluster_id_to_feature_ids[cluster_id].append(idx)
+#     colors = [['red', 'green'], [ 'orange', 'blue'], ['m', 'c']]
+#     selected_features = []
+#     labels_all = []
+#     lines_all = []
+#
+#     # selected_idx = [v for v in cluster_id_to_feature_ids.values() if len(v) > 1]
+#     # idx_fea = [str(i[0]) + ': ' + col_name[i[0]] + ', ' + str(i[1]) + ': ' + col_name[i[1]] for i in selected_idx]
+#     # idx_fea_flat = idx_fea[0] + idx_fea[1] + idx_fea[2]
+#     # fig.text(0.5, 0, idx_fea_flat, ha='center')
+#
+#     # for i in range(len(col_name)):
+#     #     fig.text(1.0, 1-0.024*(i+1), str(i) + ': ' + col_name[i], ha='left')
+#
+#     plt.show()
+#     fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlation.pdf', bbox_inches='tight')
+#
+#     if plot:
+#         fig, axs = plt.subplots(1, 3, figsize=(6, 3), sharey=True)
+#         idx_plot = 0
+#         for v in cluster_id_to_feature_ids.values():
+#
+#             if len(v) > 1:
+#                 labels = [textwrap.fill(col_name[v[0]], 35), textwrap.fill(col_name[v[1]], 35)]
+#                 labels_all = labels_all + labels
+#                 # l1 = sns.histplot(x[:, v[0]], ax=axs[idx_plot], color='g', label=labels[0], kde=True)
+#                 # l2 = sns.histplot(x[:, v[1]], ax=axs[idx_plot], color='r', label=labels[1], kde=True)
+#                 # l1 = sns.distplot(x[:, v[0]], ax=axs[idx_plot], color='green', label=labels[0], kde=True, hist=False)
+#                 # l2 = sns.distplot(x[:, v[1]], ax=axs[idx_plot], color='red', label=labels[1], kde=True, hist=False)
+#                 l1 = sns.kdeplot(x[:, v[0]], ax=axs[idx_plot], shade=True, color=colors[idx_plot][0], label=labels[0], alpha=.2)
+#                 l2 = sns.kdeplot(x[:, v[1]], ax=axs[idx_plot], shade=True, color=colors[idx_plot][1], label=labels[1], alpha=.2)
+#
+#                 # axs[idx_plot].set_xlabel('feature value')
+#
+#                 box = axs[idx_plot].get_position()
+#                 axs[idx_plot].set_position([box.x0, box.y0, box.width, box.height * 0.8])
+#                 axs[idx_plot].legend(loc='center left', bbox_to_anchor=(-0.2, 1.12), ncol=1,
+#                                      handletextpad=0.1, handlelength=0.3)
+#
+#                 # axs[idx_plot].legend(loc='best')
+#                 # axs[idx_plot].set_ylim([0, 25])
+#                 # axs[idx_plot].yaxis.get_major_formatter().set_powerlimits((0, 1))
+#                 if variances[v[0]] > variances[v[1]]:
+#                     selected_features.append(v[0])
+#                 else:
+#                     selected_features.append(v[1])
+#                 idx_plot += 1
+#                 lines_all.append(l1)
+#                 lines_all.append(l2)
+#             else:
+#                 selected_features.append(v[0])
+#
+#         plt.subplots_adjust(wspace=0, hspace=0)
+#         # fig.subplots_adjust(top=0.95)
+#         fig.text(0.5, 0.01, 'normalized feature value', ha='center')
+#
+#         # fig.legend(lines_all, labels=labels_all,  # The labels for each line
+#         #            borderaxespad=0.5,  # Small spacing around legend box
+#         #            loc='upper right', bbox_to_anchor=(0.95, 0.05), ncol=3)
+#
+#         fig.tight_layout()
+#         plt.show()
+#         fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlated_fea.pdf',
+#                     bbox_inches='tight')
+#
+#     removed_features = set(col_name) - set(col_name[selected_features])
+#     print(f'removed features are {removed_features}')
+#
+#     x = x[:, selected_features]
+#     new_features = col_name[selected_features]
+#
+#     return x, new_features
+
 def correlation_check(x, col_name, th, variances, plot):
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
+    fig, ax1 = plt.subplots(1, figsize=(4.5, 5))
 
     corr, _ = scipy.stats.spearmanr(x)
     corr_linkage = scipy.cluster.hierarchy.ward(corr)
+    col_idx = np.arange(len(col_name))
 
-    dendro = scipy.cluster.hierarchy.dendrogram(corr_linkage, labels=col_name, ax=ax1, leaf_rotation=90)
+    dendro = scipy.cluster.hierarchy.dendrogram(corr_linkage, labels=col_idx, ax=ax1, leaf_rotation=90)
     dendro_idx = np.arange(0, len(dendro['ivl']))
 
-    ax2.imshow(corr[dendro['leaves'], :][:, dendro['leaves']])
-    ax2.set_xticks(dendro_idx)
-    ax2.set_yticks(dendro_idx)
-    ax2.set_xticklabels(dendro['ivl'], rotation='vertical')
-    ax2.set_yticklabels(dendro['ivl'])
+    for i in range(len(col_name)):
+        fig.text(0.975, 1-0.024*(i+1), str(i) + ': ' + col_name[i], ha='left')
+
     fig.tight_layout()
     plt.show()
-    fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlation.pdf')
+    fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/dendro.pdf', bbox_inches='tight')
+
+    fig, ax1 = plt.subplots(1, figsize=(6, 5))
+    c = ax1.imshow(corr[dendro['leaves'], :][:, dendro['leaves']])
+
+    ax1.set_xticks(dendro_idx)
+    ax1.set_yticks(dendro_idx)
+    ax1.set_xticklabels(dendro['ivl'], rotation='vertical')
+    ax1.set_yticklabels(dendro['ivl'])
+
+    plt.colorbar(c)
+
+    plt.show()
+    fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/colormap.pdf', bbox_inches='tight')
 
     # cluster_ids = hierarchy.fcluster(corr_linkage, th, criterion='distance')
     cluster_ids = scipy.cluster.hierarchy.fcluster(corr_linkage, th, criterion='distance')
     cluster_id_to_feature_ids = defaultdict(list)
     for idx, cluster_id in enumerate(cluster_ids):
         cluster_id_to_feature_ids[cluster_id].append(idx)
-
+    colors = [['red', 'green'], ['orange', 'blue'], ['m', 'c']]
     selected_features = []
+    labels_all = []
+
     if plot:
+        fig, axs = plt.subplots(1, 3, figsize=(6, 3), sharey=True)
+        idx_plot = 0
         for v in cluster_id_to_feature_ids.values():
+
             if len(v) > 1:
-                fig = plt.figure(figsize=[5, 4])
-                sns.distplot(x[:, v[0]], color='g', label=col_name[v[0]])
-                sns.distplot(x[:, v[1]], color='r', label=col_name[v[1]])
-                plt.legend(loc='best')
-                fig.tight_layout()
-                fig.subplots_adjust(top=0.95)
-                plt.show()
+                labels = [textwrap.fill(col_name[v[0]], 35), textwrap.fill(col_name[v[1]], 35)]
+                labels_all = labels_all + labels
+                sns.kdeplot(x[:, v[0]], ax=axs[idx_plot], shade=True, color=colors[idx_plot][0], label=labels[0], alpha=.2)
+                sns.kdeplot(x[:, v[1]], ax=axs[idx_plot], shade=True, color=colors[idx_plot][1], label=labels[1], alpha=.2)
+
+                box = axs[idx_plot].get_position()
+                axs[idx_plot].set_position([box.x0, box.y0, box.width, box.height * 0.8])
+                axs[idx_plot].legend(loc='center left', bbox_to_anchor=(-0.2, 1.12), ncol=1,
+                                     handletextpad=0.1, handlelength=0.3)
+
                 if variances[v[0]] > variances[v[1]]:
                     selected_features.append(v[0])
                 else:
                     selected_features.append(v[1])
+                idx_plot += 1
             else:
                 selected_features.append(v[0])
+
+        plt.subplots_adjust(wspace=0, hspace=0)
+        fig.text(0.5, 0.01, 'normalized feature value', ha='center')
+
+        fig.tight_layout()
+        plt.show()
+        fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlated_fea.pdf',
+                    bbox_inches='tight')
 
     removed_features = set(col_name) - set(col_name[selected_features])
     print(f'removed features are {removed_features}')
@@ -557,7 +685,7 @@ def correlation_check(x, col_name, th, variances, plot):
     return x, new_features
 
 
-def anova(X_train, y_train, col_name, k):
+def anova(X_train, y_train, col_name, k, col):
     fvalue_selector = SelectKBest(f_regression, k=k)  # select features with 20 best ANOVA F-Values
     fvalue_selector.fit_transform(X_train, y_train)
     mask = fvalue_selector.get_support()
@@ -565,25 +693,29 @@ def anova(X_train, y_train, col_name, k):
 
     y = np.array(fvalue_selector.scores_)
     print(f'anova scores {y}')
-    idx = np.argsort(y)
+    # idx = np.argsort(y)
+    #
+    # fig, ax1 = plt.subplots(1, 1, figsize=(5, 2))
+    # plt.bar([col_name[i] for i in idx], np.log(y[idx]))
+    # ax1.set_xticks(np.arange(len(col_name)))
+    # ax1.set_xticklabels([col.index(col_name[i]) for i in idx], rotation=80)
+    # ax1.set_xlabel('feature index')
+    # ax1.set_ylabel('ANOVA score')
+    # fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/anova.pdf',
+    #             bbox_inches='tight')
+    # plt.show()
 
-    fig, ax1 = plt.subplots(1, 1, figsize=(12, 8))
-    plt.bar([col_name[i] for i in idx], np.log(y[idx]))
-    ax1.set_xticks(np.arange(len(col_name)))
-    ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
-    plt.show()
+    # idx = idx[0:14]
+    # fig, ax1 = plt.subplots(1, 1, figsize=(5, 4))
+    # plt.bar([col_name[i] for i in idx], np.log(y[idx]))
+    # ax1.set_xticks(np.arange(len(idx)))
+    # ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
+    # plt.show()
 
-    idx = idx[0:14]
-    fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
-    plt.bar([col_name[i] for i in idx], np.log(y[idx]))
-    ax1.set_xticks(np.arange(len(idx)))
-    ax1.set_xticklabels([col_name[i] for i in idx], rotation=80)
-    plt.show()
-
-    return new_features
+    return new_features, y
 
 
-def mutual_information(x_train, y_train, col_name, k):
+def mutual_information(x_train, y_train, col_name, k, col):
     selector = SelectKBest(mutual_info_regression, k=k)
     selector.fit(x_train, y_train)
     # to get names of the selected features
@@ -591,16 +723,20 @@ def mutual_information(x_train, y_train, col_name, k):
     new_features = [col_name[i] for i in range(mask.shape[0]) if mask[i]]
 
     y = np.array(selector.scores_)
-    print(f'mutual information scores {y}')
-    idx = np.argsort(y)
+    # print(f'mutual information scores {y}')
+    # idx = np.argsort(y)
+    #
+    # fig, ax1 = plt.subplots(1, 1, figsize=(5, 2))
+    # plt.bar([col_name[i] for i in idx], y[idx])
+    # ax1.set_xticks(np.arange(len(col_name)))
+    # ax1.set_xticklabels([col.index(col_name[i]) for i in idx], rotation=50)
+    # ax1.set_xlabel('feature index')
+    # ax1.set_ylabel('mutual information score')
+    # fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/mutual_information.pdf',
+    #             bbox_inches='tight')
+    # plt.show()
 
-    fig, ax1 = plt.subplots(1, 1, figsize=(5, 4))
-    plt.bar([col_name[i] for i in idx], y[idx])
-    ax1.set_xticks(np.arange(len(col_name)))
-    ax1.set_xticklabels([col_name[i] for i in idx], rotation=50)
-    plt.show()
-
-    return new_features
+    return new_features, y
 
 
 def plot_pdf(data, y, title_str):
@@ -615,13 +751,6 @@ def plot_pdf(data, y, title_str):
     else:
         plt.hist(all_data, bins=list(range(3)), histtype='bar', label=labels, align='left')
         plt.xticks([0, 1, 2])
-
-    # n1, bin1, p1 = plt.hist(ben_data, bins=list(range(10)), color='blue', edgecolor='none', align='left', rwidth=0.5)
-    #
-    # n1, bin1, p1 = plt.hist(mal_data, bins=list(range(10)), color='green', edgecolor='none',  align='right', rwidth=0.5)
-
-    # sns.histplot(data[y == 1], color='g', label='benign')
-    # sns.histplot(data[y == 0], color='r', label='malignant')
 
     plt.legend(loc='best')
     plt.title(title_str)
@@ -639,35 +768,71 @@ def shuffle_data(array):
 
 def plot_ben_mal(col_name, new_features, x, y):
     removed_features = set(list(col_name)) - set(new_features)
+    removed_features = ['urgent', 'num_compromised', 'num_root', 'su_attempted',
+                        'land', 'is_host_login', 'root_shell', 'dst_bytes']
     y = y.astype(np.float32) == 1
-    # for fea in removed_features:
-    #     plot_pdf(x[fea].values, y, title_str=fea)
 
-    # fig = plt.subplot(figsize=(5, 4))
-    fig, axs = plt.subplots(1, 5, figsize=(10, 4), sharey=True)
+    fig, axs = plt.subplots(2, 4, figsize=(6, 4), sharey=True)
 
     labels = ['Intrusion Traffic', 'Normal Traffic']
     for i, fea in enumerate(removed_features):
+        row = int(np.floor(i/4))
+        col = i%4
         x_fea = x[fea].values
         mal_data = x_fea[y == 0]
         ben_data = x_fea[y == 1]
         all_data = [mal_data, ben_data]
 
         if 'byte' in fea:
-            axs[i].hist(all_data, bins=4, range=[0, 2e4], histtype='bar', label=labels, align='left')
+            axs[row, col].hist(all_data, bins=4, range=[0, 2e4], histtype='bar', label=labels, align='left')
         else:
-            axs[i].hist(all_data, bins=list(range(3)), histtype='bar', label=labels, align='left')
-            axs[i].set_xticks([0, 1, 2])
+            axs[row, col].hist(all_data, bins=list(range(3)), histtype='bar', label=labels, align='left')
+            axs[row, col].set_xticks([0, 1, 2])
+        # axs[row, col].set_xlabel('feature value')
+        # if i==0 or i==4:
+        #     axs[row, col].set_ylabel('number of instances')
 
         # axs[i].legend(loc='best')
-        axs[i].yaxis.get_major_formatter().set_powerlimits((0, 1))
-        axs[i].set_title(fea)
-    fig.legend(
-               labels=labels,  # The labels for each line
+        axs[row, col].yaxis.get_major_formatter().set_powerlimits((0, 1))
+        axs[row, col].set_title(fea)
+
+    fig.text(0.5, 0.01, 'normalized feature value', ha='center')
+    fig.text(0.01, 0.5, 'count', va='center', rotation='vertical')
+    fig.subplots_adjust(left=0, bottom=0.3, right=0.5, top=1)
+    fig.legend(labels=labels,  # The labels for each line
                borderaxespad=0.5,  # Small spacing around legend box
-               loc='upper right', bbox_to_anchor=(0.75, 0.05), ncol=2)
-    # fig.tight_layout()
+               loc='upper right', bbox_to_anchor=(0.75, 0), ncol=2)
+
     plt.show()
+
+    fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/removed_fea.pdf',
+                bbox_inches='tight')
+
+
+def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col):
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(5, 4))
+
+    idx = np.argsort(mutual_score)
+
+    ax1.bar([cat_col_name[i] for i in idx], mutual_score[idx], color='royalblue')
+    ax1.set_xticks(np.arange(len(cat_col_name)))
+    ax1.set_xticklabels([col.index(cat_col_name[i]) for i in idx], rotation=0)
+    ax1.set_xlabel('(Categorical) feature index')
+    ax1.set_ylabel('mutual_info score')
+
+    idx = np.argsort(anova_score)
+
+    ax2.bar([numerical_col_name[i] for i in idx], anova_score[idx], color='royalblue')
+    ax2.set(yscale="log")
+    ax2.set_xticks(np.arange(len(numerical_col_name)))
+    ax2.set_xticklabels([col.index(numerical_col_name[i]) for i in idx], rotation=90)
+    ax2.set_xlabel('(Numerical) feature index')
+    ax2.set_ylabel('Anova score')
+
+    plt.show()
+
+    fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/anova_mutual.pdf',
+                bbox_inches='tight')
 
 
 class NSL_KDD:
@@ -681,27 +846,26 @@ class NSL_KDD:
             if os.path.exists('./dataset/NSL_KDD/selected_features.npy'):
                 selected_features = np.load('./dataset/NSL_KDD/selected_features.npy', allow_pickle=True)
             else:
-                # # remove features with zero variance and correlated features
-                # # selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
-                # x, variances, x_col_name1 = variance_check(x, x_col_name, True)
-                # x, x_col_name2 = correlation_check(x, x_col_name1, th=0.2, variances=variances, plot=True)
-                # # selected_features = feature_selection(x, y, x_col_name2, FEATURE_NUM-3)
-                #
-                # cate_features = binary_col + categorical_col
-                # l2 = len(cate_features)
-                # numerical_features = [fea for fea in x_col_name2 if fea not in cate_features]
-                # l1 = len(numerical_features)
-                #
-                # # for categorical features and numerical feature
-                # selected_features_categorical = mutual_information(x[:, l1:], y, cate_features, k=l2 - 3)
-                # selected_features_numerical = anova(x[:, 0: l1], y, numerical_features, k=l1 - 5)
-                # plot_ben_mal(numerical_features, selected_features_numerical, df_train_original, y)
-                #
-                # selected_features = selected_features_numerical + selected_features_categorical
+                # remove features with zero variance and correlated features
+                # selected_features = feature_selection(x, y, x_col_name, FEATURE_NUM)
+                x1, variances, x_col_name1 = variance_check(x, x_col_name, True)
+                x2, x_col_name2 = correlation_check(x1, x_col_name1, th=0.2, variances=variances, plot=True)
 
-                removed_features = ['num_compromised', 'num_root', 'dst_byte', 'su_attempted', 'urgent', 'land', 'is_host_login',
-                                    'root_shell', 'rerror_rate', 'serror_rate', 'dst_host_srv_serror_rate', 'num_outbound_cmds']
-                selected_features = list(set(x_col_name) - set(removed_features))
+                cate_features = binary_col + categorical_col
+                l2 = len(cate_features)
+                numerical_features = [fea for fea in x_col_name2 if fea not in cate_features]
+                l1 = len(numerical_features)
+
+                # for categorical features and numerical feature
+                selected_features_categorical, mutual_score = mutual_information(x2[:, l1:], y, cate_features,
+                                                                                 k=l2 - 3, col=list(x_col_name1))
+                selected_features_numerical, anova_score = anova(x2[:, 0: l1], y, numerical_features,
+                                                                 k=l1 - 5, col=list(x_col_name1))
+
+                plot_ben_mal(numerical_features, selected_features_numerical, df_train_original, y)
+                plot_scores(anova_score, mutual_score, numerical_features, cate_features, list(x_col_name1))
+                selected_features = selected_features_numerical + selected_features_categorical
+
                 np.save('./dataset/NSL_KDD/selected_features.npy', selected_features)
         else:
             selected_features = datacols_no_outbound

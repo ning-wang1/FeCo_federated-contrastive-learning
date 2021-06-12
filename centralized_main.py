@@ -393,7 +393,7 @@ def main(args):
 if __name__ == '__main__':
     gv.init('centralized')
     args = gv.args
-    args.manual_seed = 3
+    args.manual_seed = 15
 
     args.data_partition_type = 'normalOverAll'
 
