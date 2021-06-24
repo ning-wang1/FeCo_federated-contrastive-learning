@@ -20,20 +20,20 @@ from utils.federated_utils import average_weights, test_inference
 
 
 def main(args):
-    set_random_seed(args.manual_seed, args.use_cuda)
+    rng = set_random_seed(args.manual_seed, args.use_cuda)
     # load dataset and user group
     if args.dataset == 'nsl':
         attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
         if args.data_partition_type is "normalOverAll":
-            all_data = NSL_KDD(data_type=None)
-            normal_data = NSL_KDD(data_type='normal')
-            anormal_data = NSL_KDD(data_type='anomaly')
+            all_data = NSL_KDD(rng, data_type=None)
+            normal_data = NSL_KDD(rng, data_type='normal')
+            anormal_data = NSL_KDD(rng, data_type='anomaly')
         else:
             attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-            all_data = NSL_KDD(attack, data_type=None)
-            normal_data = NSL_KDD(attack, data_type='normal')
-            anormal_data = NSL_KDD(attack, data_type='anomaly')
+            all_data = NSL_KDD(rng, attack, data_type=None)
+            normal_data = NSL_KDD(rng, attack, data_type='normal')
+            anormal_data = NSL_KDD(rng, attack, data_type='anomaly')
 
     train_normal, train_anormal, valid_data, test_data, user_groups_normal, user_groups_anormal = get_dataset(
         args, all_data, normal_data, anormal_data)

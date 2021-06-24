@@ -11,6 +11,7 @@ import os
 import time
 import random
 from utils.setup_NSL import NSL_KDD, NSL_data
+from utils.utils import set_random_seed
 import numpy as np
 
 
@@ -230,8 +231,9 @@ class ExperimentBuilder(object):
 if __name__ == '__main__':
     gv.init('centralized')
     args = gv.args
+    rng = set_random_seed(args.manual_seed, args.use_cuda)
 
-    all_data = NSL_KDD(data_type=None)
+    all_data = NSL_KDD(rng, data_type=None)
 
     x_train = all_data.train_data
     x_test = all_data.test_data

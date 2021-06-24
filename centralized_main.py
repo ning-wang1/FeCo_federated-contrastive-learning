@@ -87,7 +87,7 @@ def train(train_normal_loader, train_anormal_loader, model, model_head, nce_aver
 
 
 def main(args):
-    set_random_seed(args.manual_seed, args.use_cuda)
+    rng = set_random_seed(args.manual_seed, args.use_cuda)
     if args.nesterov:
         dampening = 1
     else:
@@ -96,14 +96,14 @@ def main(args):
     attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
     if args.data_partition_type is "normalOverAll":
-        all_data = NSL_KDD(data_type=None)
-        normal_data = NSL_KDD(data_type='normal')
-        anormal_data = NSL_KDD(data_type='anomaly')
+        all_data = NSL_KDD(rng, data_type=None)
+        normal_data = NSL_KDD(rng, data_type='normal')
+        anormal_data = NSL_KDD(rng, data_type='anomaly')
     else:
         attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-        all_data = NSL_KDD(attack, data_type=None)
-        normal_data = NSL_KDD(attack, data_type='normal')
-        anormal_data = NSL_KDD(attack, data_type='anomaly')
+        all_data = NSL_KDD(rng, attack, data_type=None)
+        normal_data = NSL_KDD(rng, attack, data_type='normal')
+        anormal_data = NSL_KDD(rng, attack, data_type='anomaly')
 
     if args.mode == 'train':
         print("=================================Loading Anormaly Training Data!=================================")
@@ -364,7 +364,7 @@ def main(args):
 
         # compute a decision-making threshold using the validation dataset
         valid_scores = cal_score(model, normal_vec, validation_loader, None, args.use_cuda)
-        th = get_threshold(valid_scores, percent=6)
+        th = get_threshold(valid_scores, percent=5)
         print(f'the threshold is set as {th}')
 
         # evaluating the scores of the test dataset and show the IDS performance
@@ -393,20 +393,27 @@ def main(args):
 if __name__ == '__main__':
     gv.init('centralized')
     args = gv.args
-    args.manual_seed = 15
+    args.manual_seed = 2
 
     args.data_partition_type = 'normalOverAll'
 
     if args.data_partition_type is 'normalOverAll':
+        # args.epochs = 60
+        # args.val_step = 30
+        # args.save_step = 30
+        # args.tau = 0.03
+        # args.learning_rate = 0.001
+        # args.lr_decay = 30
+        # args.n_train_batch_size = 6
+
         args.epochs = 60
         args.val_step = 30
         args.save_step = 30
         args.tau = 0.03
         args.learning_rate = 0.001
-        args.lr_decay = 30
+        args.lr_decay = 45
         args.n_train_batch_size = 5
-        args.a_train_batch_size = 200
-        args.latent_dim = 64
+
     else:
         args.epochs = 50
         args.val_step = 10

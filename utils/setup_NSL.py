@@ -32,7 +32,6 @@ import scipy.cluster
 # from keras.models import Sequential
 # from keras.layers import Dense
 from utils.classifier import evaluate_sub
-import random
 
 
 FEATURE_NUM = 35  # the number of selected features
@@ -62,6 +61,20 @@ datacols = ["duration", "protocol_type", "service", "flag", "src_bytes",
             "dst_host_same_srv_rate", "dst_host_diff_srv_rate", "dst_host_same_src_port_rate",
             "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
             "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "attack", "last_flag"]
+
+cols_cor = ["dst_host_srv_serror_rate", "srv_serror_rate", "serror_rate",
+            "dst_host_serror_rate", "dst_bytes", "same_srv_rate",
+            "src_bytes", "rerror_rate", "srv_rerror_rate",
+            "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "dst_host_count",
+            "dst_host_srv_count", "logged_in", "dst_host_diff_srv_rate",
+            "diff_srv_rate", "dst_host_srv_diff_host_rate", "dst_host_same_src_port_rate",
+            "dst_host_same_srv_rate", "duration", "num_compromised",
+            "hot", "is_guest_login", "num_access_files",
+            "num_root", "su_attempted", "root_shell",
+            "num_shells", "num_file_creations", "num_failed_logins",
+            "urgent", "wrong_fragment", "land",
+            "is_host_login", "srv_count", "count", "srv_diff_host_rate",
+            "protocol_type", "service", "flag", "num_outbound_cmds"]
 
 datacols_no_outbound = ["duration", "protocol_type", "service", "flag", "src_bytes",
                         "dst_bytes", "land", "wrong_fragment", "urgent", "hot", "num_failed_logins",
@@ -228,6 +241,40 @@ def preprocessing(scaler_name=SCALER):
     print('Resampled dataset shape {}'.format(x.shape))
 
     return x, y, class_col, test, scaler
+
+
+def rank_feas_by_correlation(x, col_name):
+
+    """
+    compute the correlations of different features and remove redundancy (i.e., only keep
+    one of all the highly correlated features)
+    """
+    col_name_original = col_name
+    continuous_and_ordinal_feas = [fea for fea in col_name_original if fea not in categorical_col]
+    continuous_and_ordinal_idxes = [col_name_original.index(fea) for fea in continuous_and_ordinal_feas]
+    x_original = copy.deepcopy(x)
+
+    x = copy.deepcopy(x[:, continuous_and_ordinal_idxes])
+    col_name = continuous_and_ordinal_feas
+
+    corr, _ = scipy.stats.spearmanr(x)
+    corr_linkage = scipy.cluster.hierarchy.ward(corr)
+
+    # get the ids of the clustered features
+    cluster_ids = scipy.cluster.hierarchy.fcluster(corr_linkage, 0, criterion='distance')
+    cluster_id_to_feature_ids = defaultdict(list)
+    for idx, cluster_id in enumerate(cluster_ids):
+        cluster_id_to_feature_ids[cluster_id].append(idx)
+
+    selected_fea_idxes = []
+
+    selected_feas = [col_name[idx] for idx in selected_fea_idxes]
+
+    new_features = selected_feas + categorical_col
+    new_features_idxes = [col_name_original.index(fea) for fea in new_features]
+    x = x_original[:, new_features_idxes]
+
+    return x, new_features
 
 
 def oneHot(train_data, test_data, features, col_names=('protocol_type', 'service', 'flag')):
@@ -495,6 +542,14 @@ def correlation_check(x, col_name, th, variances, plot):
     compute the correlations of different features and remove redundancy (i.e., only keep
     one of all the highly correlated features)
     """
+    col_name_original = list(col_name)
+    continuous_and_ordinal_feas = [fea for fea in col_name_original if fea not in categorical_col]
+    continuous_and_ordinal_idxes = [col_name_original.index(fea) for fea in continuous_and_ordinal_feas]
+    x_original = copy.deepcopy(x)
+
+    x = copy.deepcopy(x[:, continuous_and_ordinal_idxes])
+    col_name = continuous_and_ordinal_feas
+
     corr, _ = scipy.stats.spearmanr(x)
     corr_linkage = scipy.cluster.hierarchy.ward(corr)
     col_idx = np.arange(len(col_name))
@@ -533,7 +588,7 @@ def correlation_check(x, col_name, th, variances, plot):
 
     # show the distribution of features in the same cluster
     colors = [['red', 'green'], ['orange', 'blue'], ['m', 'c']]
-    selected_features = []
+    selected_fea_idxes = []
     labels_all = []
 
     if plot:
@@ -553,12 +608,12 @@ def correlation_check(x, col_name, th, variances, plot):
                                      handletextpad=0.1, handlelength=0.3)
 
                 if variances[v[0]] > variances[v[1]]:
-                    selected_features.append(v[0])
+                    selected_fea_idxes.append(v[0])
                 else:
-                    selected_features.append(v[1])
+                    selected_fea_idxes.append(v[1])
                 idx_plot += 1
             else:
-                selected_features.append(v[0])
+                selected_fea_idxes.append(v[0])
 
         plt.subplots_adjust(wspace=0, hspace=0)
         fig.text(0.5, 0.01, 'normalized feature value', ha='center')
@@ -568,11 +623,15 @@ def correlation_check(x, col_name, th, variances, plot):
         fig.savefig('/home/ning/extens/federated_contrastive/result/data_analytics/correlated_fea.pdf',
                     bbox_inches='tight')
 
-    removed_features = set(col_name) - set(col_name[selected_features])
+    selected_feas = [col_name[idx] for idx in selected_fea_idxes]
+    removed_features = set(col_name) - set(selected_feas)
     print(f'removed features are {removed_features}')
 
-    x = x[:, selected_features]
-    new_features = col_name[selected_features]
+    # x = x[:, selected_features]
+
+    new_features = [fea for fea in col_name_original if fea in selected_feas or fea in categorical_col]
+    new_features_idxes = [col_name_original.index(fea) for fea in new_features]
+    x = x_original[:, new_features_idxes]
 
     return x, new_features
 
@@ -627,14 +686,6 @@ def plot_pdf(data, y, title_str):
     plt.title(title_str)
     fig.tight_layout()
     plt.show()
-
-
-def shuffle_data(array):
-    length = array.shape[0]
-    idx = list(range(length))
-    random.shuffle(idx)
-    new_arr = array[idx]
-    return new_arr
 
 
 def plot_ben_mal(col_name, new_features, x, y):
@@ -709,7 +760,7 @@ def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col
 
 
 class NSL_KDD:
-    def __init__(self, attack_class=None, data_type=None, fea_selection=True):
+    def __init__(self, rng, attack_class=None, data_type=None, fea_selection=True):
 
         x, y, x_col_name, test, scaler = preprocessing()
         df_train = pd.read_csv(train_file_path, sep=",", names=datacols)  # load data
@@ -733,11 +784,22 @@ class NSL_KDD:
                 selected_features_categorical, mutual_score = mutual_information(x2[:, l1:], y, cate_features,
                                                                                  k=l2 - 3)
                 selected_features_numerical, anova_score = anova(x2[:, 0: l1], y, numerical_features,
-                                                                 k=l1 - 5)
+                                                                 k=l1 - 3)
 
                 plot_ben_mal(numerical_features, selected_features_numerical, df_train_original, y)
                 plot_scores(anova_score, mutual_score, numerical_features, cate_features, list(x_col_name1))
                 selected_features = selected_features_numerical + selected_features_categorical
+
+                # features = ['num_outbound_cmds', 'rerror_rate', 'serror_rate', 'dst_host_srv_serror_rate',
+                #             'land', 'root_shell', 'is_host_login', 'num_compromised', 'num_root', 'dst_bytes',
+                #             'su_attempted', 'urgent']
+                #
+                # num = 8
+                # removed_features = [features[i] for i in range(num)]
+                # selected_features = list(set(x_col_name) - set(removed_features))
+
+                # rank the features based on the correlation
+                selected_features = [fea for fea in cols_cor if fea in selected_features]
 
                 np.save('./dataset/NSL_KDD/selected_features.npy', selected_features)
         else:
@@ -750,6 +812,7 @@ class NSL_KDD:
         if attack_class is None:
             x_train, x_test, y_train, y_test, y_train_multi_class, y_test_multi_class, cat_num_dict = \
                 get_two_classes_data(x, y, x_col_name, test, selected_features)
+
             self.y_test_multi_class = y_test_multi_class
             y_train_multi_class = y_train_multi_class
         else:
@@ -759,14 +822,11 @@ class NSL_KDD:
         # train data shuffling
         train_len = x_train.shape[0]
         idx = list(range(train_len))
-        random.shuffle(idx)
+        rng.shuffle(idx)
+
         x_train = copy.deepcopy(x_train[idx, :])
         y_train = copy.deepcopy(y_train[idx])
         y_train_multi_class = copy.deepcopy(y_train_multi_class[idx])
-
-        # sel_idx = idx[0:NORMAL_TRAIN_NUM]
-        # x_train = copy.deepcopy(x_train[sel_idx, :])
-        # y_train = copy.deepcopy(y_train[sel_idx])
 
         # select a subset
         if data_type == 'normal':
@@ -784,11 +844,6 @@ class NSL_KDD:
         y_test = np.copy(y_test[idx_test])
         x_train = np.copy(x_train[idx_train])
         x_test = np.copy(x_test[idx_test])
-
-        # numerical_features = []
-        # for col in datacols:
-        #     if col in selected_features and not col in categorical_features:
-        #         numerical_features.append(col)
 
         self.test_data = x_test
         self.test_labels = y_test
@@ -838,7 +893,7 @@ class NSL_data(Dataset):
 
 
 class NSL_Dataset():
-    def __init__(self, normal_class=1, data_partition_type='normalOverAll'):
+    def __init__(self, rng, normal_class=1, data_partition_type='normalOverAll'):
         super().__init__()
 
         self.n_classes = 2  # 0: normal, 1: outlier
@@ -847,12 +902,12 @@ class NSL_Dataset():
 
         attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
         if data_partition_type is "normalOverAll":
-            data = NSL_KDD()
-            normal_data = NSL_KDD(data_type='normal')
+            data = NSL_KDD(rng)
+            normal_data = NSL_KDD(rng, data_type='normal')
         else:
             attack = [(data_partition_type, attack_type[data_partition_type])]
-            data = NSL_KDD(attack)
-            normal_data = NSL_KDD(attack, data_type='normal')
+            data = NSL_KDD(rng, attack)
+            normal_data = NSL_KDD(rng, attack, data_type='normal')
 
         self.train_set = NSL_data(normal_data.train_data, normal_data.train_labels)
         self.valid_set = NSL_data(normal_data.validation_data, normal_data.validation_labels)

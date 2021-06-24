@@ -347,7 +347,8 @@ def detect_with_manifold(args, model, train_normal, train_anormal, test_dataload
     all_labels = np.concatenate((np.ones(normal_data.shape[0]), np.zeros(anormal_data.shape[0])))
 
     idx = np.arange(all_data.shape[0])
-    np.random.shuffle(idx)
+    rng = np.random.default_rng(args.manual_seed)
+    rng.shuffle(idx)
     selected_idx = idx[0: 20000]
 
     pred_consist = manifold(all_data[selected_idx], all_labels[selected_idx], test_data.cpu(), test_labels)

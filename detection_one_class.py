@@ -11,7 +11,7 @@ from models.kde import KDE
 from models.ocsvm import SVM
 from models.vae import NSL_MLP_Autoencoder, AETrainer
 from utils.setup_NSL import NSL_Dataset
-from utils.utils import get_threshold
+from utils.utils import get_threshold, set_random_seed
 # from utils.logs import log_exp_config, log_isoForest, log_AD_results
 
 
@@ -78,20 +78,18 @@ def main():
     args.seed = 4
     print('Options: {}', args)
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    rng = set_random_seed(args.seed)
 
     attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
     # load data
     if args.data_partition_type is "normalOverAll":
-        data = NSL_KDD(data_type=None)
-        normal_data = NSL_KDD(data_type='normal')
+        data = NSL_KDD(rng, data_type=None)
+        normal_data = NSL_KDD(rng, data_type='normal')
     else:
         attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-        data = NSL_KDD(attack, data_type=None)
-        normal_data = NSL_KDD(attack, data_type='normal')
+        data = NSL_KDD(rng, attack, data_type=None)
+        normal_data = NSL_KDD(rng, attack, data_type='normal')
 
     if not os.path.exists(args.xp_dir):
         os.mkdir(args.xp_dir)
@@ -135,7 +133,7 @@ def main():
         if not torch.cuda.is_available():
             device = 'cpu'
 
-        dataset = NSL_Dataset(normal_class=1, data_partition_type=args.data_partition_type)
+        dataset = NSL_Dataset(rng, normal_class=1, data_partition_type=args.data_partition_type)
 
         # train autoencoder on dataset
         model = NSL_MLP_Autoencoder()

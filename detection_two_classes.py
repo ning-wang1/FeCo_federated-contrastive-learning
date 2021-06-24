@@ -17,7 +17,7 @@ from utils.setup_NSL import NSL_KDD, NSL_data
 from models.mlp import MLP
 from utils import classifier as clf
 from utils.classifier import get_score
-from utils.utils import split_evaluate
+from utils.utils import split_evaluate, set_random_seed
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # Log setting
@@ -200,9 +200,7 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.random.manual_seed(args.seed)
+    rng = set_random_seed(args.seed)
 
     if not os.path.isdir('models'):
         os.makedirs('models')
@@ -212,7 +210,7 @@ if __name__ == '__main__':
     # attack_class = [('R2L', 3.0)]
     # attack_class = [('U2R', 4.0)]
 
-    data = NSL_KDD(attack_class)
+    data = NSL_KDD(rng, attack_class)
 
     # load data
     train_dataset = NSL_data(data.train_data, data.train_labels)

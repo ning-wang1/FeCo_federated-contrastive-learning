@@ -19,12 +19,14 @@ def adjust_learning_rate(optimizer, lr_rate):
         param_group['lr'] = lr_rate
 
 
-def set_random_seed(manual_seed, use_cuda):
+def set_random_seed(manual_seed, use_cuda=False):
     random.seed(manual_seed)
-    np.random.seed(manual_seed)
+    # np.random.seed(manual_seed)
+    rng = np.random.default_rng(manual_seed)
     torch.manual_seed(manual_seed)
     if use_cuda:
         torch.cuda.manual_seed(manual_seed)
+    return rng
 
 
 class Logger(object):
@@ -240,7 +242,7 @@ def split_evaluate(y, scores, plot=False, filename=None, manual_th=None, perform
     idx = np.argmax(acc)
     best_threshold = thresholds[idx]
 
-    print('Best ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}\n'.
+    print('Best ACC: {:.4f} | Threshold: {:.4f} | ACC_normal={:.4f} | ACC_anormal={:.4f}\n'.
           format(best_acc, best_threshold, acc_n[idx], acc_a[idx]))
 
     if manual_th is not None:
@@ -253,14 +255,14 @@ def split_evaluate(y, scores, plot=False, filename=None, manual_th=None, perform
         acc_n = correct_n / total_n
         acc_a = correct_a / total_a
         acc = (correct_n + correct_a) / (total_n + total_a)
-        print('ACC: {:.3f} | Threshold: {:.3f} | ACC_normal={:.3f} | ACC_anormal={:.3f}\n'.
+        print('ACC: {:.4f} | Threshold: {:.4f} | ACC_normal={:.4f} | ACC_anormal={:.4f}\n'.
               format(acc, manual_th, acc_n, acc_a))
 
         recall = correct_a/total_a
         precision = correct_a/(total_n-correct_n+correct_a)
         fpr = (total_n - correct_n)/total_n
 
-        print('Recall: {:.3f} | Precision: {:.3f} | fpr={:.3f} | f1={:.3f} \n'.
+        print('Recall: {:.4f} | Precision: {:.4f} | fpr={:.4f} | f1={:.4f} \n'.
               format(recall, precision, fpr, 2*recall*precision/(recall+precision)))
         if perform_dict is not None:
             perform_dict['threshold'] = manual_th
@@ -302,7 +304,7 @@ def split_evaluate_two_steps(consist_pred, y, scores, manual_th=None, perform_di
         precision = correct_a/(total_n-correct_n+correct_a)
         fpr = (total_n - correct_n)/total_n
 
-        print('Recall: {:.3f} | Precision: {:.3f} | fpr={:.3f} | f1={:.3f} \n'.
+        print('Recall: {:.4f} | Precision: {:.4f} | fpr={:.4f} | f1={:.4f} \n'.
               format(recall, precision, fpr, 2*recall*precision/(recall+precision)))
         if perform_dict is not None:
             perform_dict['threshold'] = manual_th
@@ -344,12 +346,12 @@ def per_class_acc(y, scores, manual_th, perform_dict=None):
         fn_all += fn
         tp_all += tp
 
-        print(f'{attack_type} Attack, Recall: {recall:.3f}, total test num: {len(y_pred_attack)}')
+        print(f'{attack_type} Attack, Recall: {recall:.4f}, total test num: {len(y_pred_attack)}')
         if perform_dict is not None:
             perform_dict[attack_type] = recall
 
     print(f'Overall recall {tp_all/(tp_all + fn_all)}')
-    print(f'Normal traffic data, Recall: {tn_all/len(y_pred_normal):.3f}, Precision {tn_all/(tn_all + fn_all)}')
+    print(f'Normal traffic data, Recall: {tn_all/len(y_pred_normal):.4f}, Precision {tn_all/(tn_all + fn_all)}')
 
 
 def get_threshold(scores, percent):
