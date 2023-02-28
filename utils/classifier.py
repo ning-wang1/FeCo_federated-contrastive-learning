@@ -5,6 +5,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.semi_supervised import LabelSpreading
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.ensemble import VotingClassifier
 from sklearn.neural_network import MLPClassifier as MLP
 from sklearn.metrics import roc_curve, auc
@@ -44,7 +45,7 @@ def classifier(classifier_name, X_train, Y_train):
         DTC_Classifier.fit(X_train, Y_train)
         model = DTC_Classifier
     elif classifier_name == 'SVM':
-        SVC_Classifier = SVC(probability=True,  kernel="rbf")
+        SVC_Classifier = SVC(probability=False,  kernel="rbf")
         SVC_Classifier.fit(X_train, Y_train)
         model = SVC_Classifier
     elif classifier_name == 'MLP':

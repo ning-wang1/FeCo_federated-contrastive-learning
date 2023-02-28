@@ -9,7 +9,8 @@ from sklearn.metrics import roc_auc_score, roc_curve, auc
 from utils.logs import AD_Log
 from matplotlib import pyplot as plt
 import pickle
-from utils.utils import split_evaluate
+import csv
+from utils.utils import split_evaluate, split_evaluate_w_label
 
 
 def weighted_degree_kernel(X1, X2, degree=1, weights=1):
@@ -299,7 +300,16 @@ class SVM(object):
         print('acc test', self.diag[which_set]['acc'][-1])
 
         # show the accuracy on normal set and anormal set separately
-        split_evaluate(y, scores.flatten(), plot=True, filename=save_path + self.loss)
+        # split_evaluate(y, scores.flatten(), plot=True, filename=save_path + self.loss)
+        dic = dict()
+        _, _, auc_score = split_evaluate(y, scores.flatten(), plot=True, filename=save_path)
+        dic['auc'] = auc_score
+        split_evaluate_w_label(y, y_pred, perform_dict=dic)
+
+        with open(save_path + '.csv', 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=dic.keys())
+            writer.writeheader()
+            writer.writerow(dic)
 
         self.stop_clock()
         if which_set == 'test':

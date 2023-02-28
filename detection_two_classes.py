@@ -7,17 +7,18 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 import os.path
+import csv
 import numpy as np
 import logging
 import random
 import pickle
 import argparse
 
-from utils.setup_NSL import NSL_KDD, NSL_data
+from utils.setup_NSL_2 import NSLKDD, NSLData
 from models.mlp import MLP
 from utils import classifier as clf
 from utils.classifier import get_score
-from utils.utils import split_evaluate, set_random_seed
+from utils.utils import split_evaluate, set_random_seed, split_evaluate_w_label
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # Log setting
@@ -161,20 +162,22 @@ def present_split_acc(y_pred, y):
     print('overall acc: {:.3f}'.format(acc))
 
 
-def train_discriminators(train_data, train_labels, save_folder):
+def train_discriminators(model_name, train_data, train_labels):
 
-    lgr_model = clf.classifier('LGR', train_data, train_labels)
-    knn_model = clf.classifier('KNN', train_data, train_labels)
-    bnb_model = clf.classifier('BNB', train_data, train_labels)
-    svm_model = clf.classifier('SVM', train_data, train_labels)
-    dtc_model = clf.classifier('DTC', train_data, train_labels)
-    mlp_model = clf.classifier('MLP', train_data, train_labels)
+    if model_name is 'LGR':
+        model = clf.classifier('LGR', train_data, train_labels)
+    elif model_name is 'KNN':
+        model = clf.classifier('KNN', train_data, train_labels)
+    elif model_name is 'BNB':
+        model = clf.classifier('BNB', train_data, train_labels)
+    elif model_name is 'SVM':
+        model = clf.classifier('SVM', train_data, train_labels)
+    elif model_name is 'DTC':
+        model = clf.classifier('DTC', train_data, train_labels)
+    elif model_name is 'MLP':
+        model = clf.classifier('MLP', train_data, train_labels)
 
-    models = {'LGR': lgr_model, 'KNN': knn_model, 'BNB': bnb_model, 'SVM': svm_model, 'DTC': dtc_model,
-              'MLP': mlp_model}
-    for model_name, model in models.items():
-        pickle.dump(model, open(os.path.join(save_folder, f'{model_name}.sav'), 'wb'))
-    return models
+    return model
 
 
 def load_discriminators(model_names, file_folder):
@@ -189,56 +192,101 @@ def get_args():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_or_load", type=str, default='train')
+    parser.add_argument("--model_name", type=str, default='MLP1',
+                        choices=["LGR", 'KNN', 'BNB', 'MLP1', 'MLP', 'SVM', 'DTC'])
+    parser.add_argument("--data_partition_type", help="whether it is a binary classification (normal or attack)",
+                        default='normalOverAll', choices=["normalOverAll", "DoS", "Probe", "U2R", "R2L"], type=str)
     parser.add_argument("--dataset", help="dataset name", type=str, choices=["mnist", "cifar10", "gtsrb"])
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--model_folder", type=str, default='./result/saved_models')
-    parser.add_argument("--plot_folder", type=str, default='./result/detection/')
+    parser.add_argument("--model_folder", type=str, default='./result/two classes/saved_models/')
+    parser.add_argument("--plot_folder", type=str, default='./result/two classes/')
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = get_args()
+    args.model_name = 'MLP1'
 
     rng = set_random_seed(args.seed)
 
     if not os.path.isdir('models'):
         os.makedirs('models')
 
-    attack_class = [('DoS', 0.0)]
-    # attack_class = [('Probe', 2.0)]
-    # attack_class = [('R2L', 3.0)]
-    # attack_class = [('U2R', 4.0)]
+    dic = dict()
+    save_path = args.plot_folder + args.model_name
 
-    data = NSL_KDD(rng, attack_class)
+    attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
     # load data
-    train_dataset = NSL_data(data.train_data, data.train_labels)
-    test_dataset = NSL_data(data.test_data, data.test_labels)
-    valid_dataset = NSL_data(data.validation_data, data.validation_labels)
-    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    validloader = DataLoader(valid_dataset, batch_size=64, shuffle=False)
-    testloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    if args.data_partition_type is "normalOverAll":
+        data = NSLKDD(rng, data_type=None, fea_selection=False)
+        normal_data = NSLKDD(rng, data_type='normal', fea_selection=False)
 
-    # train and test the self-built MLP model
-    mlp_model = train_ids(data.input_shape, trainloader, validloader, testloader, save_folder=args.model_folder)
-    y_pred = mlp_predict(mlp_model, testloader)
-    y_pred = np.argmax(y_pred, axis=1)
-    present_split_acc(y_pred, data.test_labels)
-    split_evaluate(data.test_labels, y_pred[:, 1], plot=True, filename=args.plot_folder)
-
-    # train other models including SVM LG BNB DT
-    model_names = ['LGR', 'KNN', 'BNB', 'SVM', 'DTC', 'MLP']
-    if 'train' in args.train_or_load:
-        models = train_discriminators(data.train_data, data.train_labels, save_folder=args.model_folder)
     else:
-        models = load_discriminators(model_names, file_folder=args.model_folder)
+        attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
+        data = NSLKDD(rng, attack, data_type=None, fea_selection=False)
+        normal_data = NSLKDD(rng, attack, data_type='normal', fea_selection=False)
 
-    for model_name in model_names:
-        print('Model tested: {}'.format(model_name))
-        model = models[model_name]
-        y_pred = model.predict(data.test_data)
+    if args.model_name is 'MLP1':
+        # load data
+        train_dataset = NSLData(data.train_data, data.train_labels)
+        test_dataset = NSLData(data.test_data, data.test_labels)
+        valid_dataset = NSLData(data.validation_data, data.validation_labels)
+        trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+        validloader = DataLoader(valid_dataset, batch_size=64, shuffle=False)
+        testloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+        # train and test the self-built MLP model
+        mlp_model = train_ids(data.input_shape, trainloader, validloader, testloader, save_folder=args.model_folder)
+        y_pred_score = mlp_predict(mlp_model, testloader)
+        y_pred = np.argmax(y_pred_score, axis=1)
         present_split_acc(y_pred, data.test_labels)
+
+    else:
+        # subsampleing the data to make the training faster
+        n_record = len(data.train_data)
+        idx = np.arange(n_record)
+        rng.shuffle(idx)
+        # MLP n_records, svm 2000,lgr 10000, bnb n_records, KNN n_records, DTC n_records
+        # n_select = 10000
+        n_select = n_record
+        # train other models including SVM LG BNB DT
+        model = train_discriminators(
+            model_name=args.model_name,
+            train_data=data.train_data[idx[:n_select]],
+            train_labels=data.train_labels[idx[:n_select]])
+
+        y_pred_score = model.predict_proba(data.test_data)
+        y_pred = model.predict(data.test_data)
+
+        present_split_acc(y_pred, data.test_labels)
+
+    # save the results
+    _, _, auc = split_evaluate(data.test_labels, y_pred_score[:, 1], plot=True, filename=save_path, perform_dict=dic)
+    dic['auc'] = auc
+    split_evaluate_w_label(data.test_labels, y_pred, dic)
+
+    with open(save_path + '.csv', 'w') as f:
+        writer = csv.DictWriter(f, fieldnames=dic.keys())
+        writer.writeheader()
+        writer.writerow(dic)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     # test models including SVM LG BNB DT

@@ -3,12 +3,13 @@ import numpy as np
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
 import torch
+import os
 
 from test import split_acc_diff_threshold
 from utils.utils import AverageMeter, l2_normalize
 from nce_average import NCEAverage
 from nce_criteria import NCECriterion
-from utils.setup_NSL import NSL_data
+from utils.setup_NSL_2 import NSLData
 
 
 class DatasetSplit(Dataset):
@@ -56,7 +57,7 @@ class LocalUpdate(object):
         labels2 = concat_ds[3]
         data = np.concatenate([data1, data2], axis=0)
         labels = np.concatenate([labels1, labels2])
-        ds_new = NSL_data(data, labels)
+        ds_new = NSLData(data, labels)
         return ds_new
 
     def train_val_test(self, idxs_normal, idxs_anormal, dataset_normal, dataset_anormal):
@@ -68,8 +69,9 @@ class LocalUpdate(object):
         anormal_len = len(idxs_anormal)
 
         # split indexes for train, validation, and test (80, 10, 10)
-        idxs_normal_train = idxs_normal[0:int(0.9 * normal_len)]
-        idxs_anormal_train = idxs_anormal[:int(0.9 * anormal_len)]
+        ratio = 1.0
+        idxs_normal_train = idxs_normal[0:int(ratio * normal_len)]
+        idxs_anormal_train = idxs_anormal[:int(ratio * anormal_len)]
 
         idxs_normal_val = idxs_normal[int(0.8 * normal_len):int(0.9 * normal_len)]
         idxs_anormal_val = idxs_anormal[int(0.8 * anormal_len):int(0.9 * anormal_len)]
@@ -107,6 +109,7 @@ class LocalUpdate(object):
 
         model.train()
         model_head.train()
+
         for epo in range(epoch_num):
             for batch, ((normal_data, idx_n), (anormal_data, idx_a)) in enumerate(
                     zip(self.train_normal_loader, self.train_anormal_loader)):
@@ -167,7 +170,8 @@ class LocalUpdate(object):
                 'probs': prob_meter.avg,
                 'lr': optimizer.param_groups[0]['lr']
             })
-            self.inference(model)
+
+            # self.inference(model)
         return model.state_dict(), model_head.state_dict(), self.memory_bank, losses.avg
 
     def inference(self, model):

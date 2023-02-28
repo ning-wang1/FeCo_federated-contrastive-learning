@@ -1,18 +1,19 @@
 import os
 import time
+import csv
 import numpy as np
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import roc_auc_score
 
 import pickle as pickle
 from utils.logs import AD_Log
-from utils.utils import split_evaluate
+from utils.utils import split_evaluate, split_evaluate_w_label
 
 
 class IsoForest(object):
 
     def __init__(self, seed, train_data, test_data, test_labels, n_estimators=100,
-                 max_samples='auto', contamination=0.1, **kwargs):
+                 max_samples='auto', contamination='auto', **kwargs):
 
         # initialize
         self.train_data = train_data
@@ -22,6 +23,7 @@ class IsoForest(object):
         self.n_estimators = n_estimators
         self.max_samples = max_samples
         self.contamination = contamination
+        # self.contamination = 0.4
         self.initialize_isoForest(seed=seed, **kwargs)
 
         # train and test time
@@ -48,7 +50,8 @@ class IsoForest(object):
     def initialize_isoForest(self, seed=0, **kwargs):
 
         self.isoForest = IsolationForest(n_estimators=self.n_estimators, max_samples=self.max_samples,
-                                         contamination=self.contamination, n_jobs=-1, random_state=seed, **kwargs)
+                                         contamination=self.contamination, n_jobs=-1, random_state=seed,
+                                         warm_start=True, **kwargs)
 
     def start_clock(self):
 
@@ -71,6 +74,8 @@ class IsoForest(object):
         self.start_clock()
 
         self.isoForest.fit(X_train.astype(np.float32))
+        # self.isoForest.set_params(n_estimators=20)
+        # self.isoForest.fit(X_train.astype(np.float32))
 
         self.stop_clock()
         self.train_time = self.clocked
@@ -87,7 +92,8 @@ class IsoForest(object):
         print("Starting prediction...")
         self.start_clock()
 
-        scores = self.isoForest.decision_function(X.astype(np.float32))  # compute anomaly score
+        # scores = self.isoForest.decision_function(X.astype(np.float32))  # compute anomaly score
+        scores = self.isoForest.score_samples(X.astype(np.float32))
         y_pred = self.isoForest.predict(X.astype(np.float32))  # get prediction
 
         self.diag['scores'][:, 0] = scores.flatten()
@@ -100,7 +106,16 @@ class IsoForest(object):
         print('acc test', self.diag['acc'][-1])
 
         # show the accuracy on normal set and anormal set separately
-        split_evaluate(y, scores.flatten(), plot=True, filename=save_path)
+        dic = dict()
+
+        _, _, auc_score = split_evaluate(y, scores.flatten(), plot=True, filename=save_path, perform_dict=dic)
+        dic['auc'] = auc_score
+        # split_evaluate_w_label(y, y_pred, perform_dict=dic)
+
+        with open(save_path + '.csv', 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=dic.keys())
+            writer.writeheader()
+            writer.writerow(dic)
 
         self.stop_clock()
         self.test_time = self.clocked

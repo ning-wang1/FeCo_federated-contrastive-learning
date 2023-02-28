@@ -3,5 +3,9 @@
 /others/*
 /result/*
 /data/*
+/dataset/*
+/logs/*
+/ploing/*
+/result_old/*
 /__pycache__/*
 /.idea

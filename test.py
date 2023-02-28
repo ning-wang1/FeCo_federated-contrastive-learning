@@ -9,7 +9,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from detection_two_classes import get_acc, early_stop, mlp_predict
-from utils.setup_NSL import NSL_KDD, NSL_data
+from utils.setup_NSL_2 import NSLKDD, NSLData
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.semi_supervised import LabelSpreading
@@ -24,15 +24,16 @@ def get_normal_vector(model, train_normal_loader_for_test, cal_vec_batch_size, l
         normal_vec = torch.zeros((1, latent_dim)).cuda()
     else:
         normal_vec = torch.zeros((1, latent_dim))
-    for batch, (normal_data, idx) in enumerate(train_normal_loader_for_test):
-        if use_cuda:
-            normal_data = normal_data.cuda()
-        _, outputs = model(normal_data.float())
-        outputs = outputs.detach()
-        normal_vec = (torch.sum(outputs, dim=0) + normal_vec * batch * cal_vec_batch_size) / (
-                (batch + 1) * cal_vec_batch_size)
-        if (batch + 1) % 1000 == 0:
-            print(f'Calculating Average Normal Vector: Batch {batch + 1} / {total_batch}')
+    with torch.no_grad():
+        for batch, (normal_data, idx) in enumerate(train_normal_loader_for_test):
+            if use_cuda:
+                normal_data = normal_data.cuda()
+            _, outputs = model(normal_data.float())
+            outputs = outputs.detach()
+            normal_vec = (torch.sum(outputs, dim=0) + normal_vec * batch * cal_vec_batch_size) / (
+                    (batch + 1) * cal_vec_batch_size)
+            if (batch + 1) % 1000 == 0:
+                print(f'Calculating Average Normal Vector: Batch {batch + 1} / {total_batch}')
     normal_vec = l2_normalize(normal_vec)
     return normal_vec
 
@@ -51,19 +52,19 @@ def split_acc_diff_threshold(model, normal_vec, test_loader, use_cuda):
         if use_cuda:
             batch_data[0] = batch_data[0].cuda()
             batch_data[1] = batch_data[1].cuda()
-        n_num = torch.sum(batch_data[1]).cpu().detach().numpy()
-        total_n += n_num
-        total_a += (batch_data[0].size(0) - n_num)
+        a_num = torch.sum(batch_data[1]).cpu().detach().numpy()
+        total_a += a_num
+        total_n += (batch_data[0].size(0) - a_num)
         _, outputs = model(batch_data[0].float())
         outputs = outputs.detach()
         similarity = torch.mm(outputs, normal_vec.t())
         for i in range(len(threshold)):
             # If similarity between sample and average normal vector is smaller than threshold,
             # then this sample is predicted as anormal driving which is set to 0
-            prediction = similarity >= threshold[i]
+            prediction = similarity <= threshold[i]
             correct = prediction.squeeze() == batch_data[1]
-            total_correct_a[i] += torch.sum(correct[~batch_data[1].bool()])
-            total_correct_n[i] += torch.sum(correct[batch_data[1].bool()])
+            total_correct_a[i] += torch.sum(correct[batch_data[1].bool()])
+            total_correct_n[i] += torch.sum(correct[~batch_data[1].bool()])
         if (batch+1) % 100 == 0:
             print(f'Evaluating: Batch {batch + 1} / {total_batch} \n')
 
@@ -83,20 +84,22 @@ def cal_score(model, normal_vec, test_loader, score_folder=None, use_cuda=False)
     total_batch = int(len(test_loader))
     sim_1_list = torch.zeros(0)
     label_list = torch.zeros(0).type(torch.LongTensor)
-    for batch, data1 in enumerate(test_loader):
-        if use_cuda:
-            data1[0] = data1[0].cuda()
-            data1[1] = data1[1].cuda()
 
-        out_1 = model(data1[0].float())[1].detach()
-        sim_1 = torch.mm(out_1, normal_vec.t())
+    with torch.no_grad():
+        for batch, data1 in enumerate(test_loader):
+            if use_cuda:
+                data1[0] = data1[0].cuda()
+                data1[1] = data1[1].cuda()
 
-        label_list = torch.cat((label_list, data1[1].squeeze().cpu()))
-        sim_1_list = torch.cat((sim_1_list, sim_1.squeeze().cpu()))
-        if (batch + 1) % 100 == 0:
-            print(f'Calculating Scores---- Evaluating: Batch {batch + 1} / {total_batch}')
+            out_1 = model(data1[0].float())[1].detach()
+            sim_1 = torch.mm(out_1, normal_vec.t())
+
+            label_list = torch.cat((label_list, data1[1].squeeze().cpu()))
+            sim_1_list = torch.cat((sim_1_list, sim_1.squeeze().cpu()))
+            if (batch + 1) % 100 == 0:
+                print(f'Calculating Scores---- Evaluating: Batch {batch + 1} / {total_batch}')
     if score_folder is not None:
-        np.save(os.path.join(score_folder, 'score.npy'), sim_1_list.numpy())
+        np.save(score_folder, sim_1_list.numpy())
         print('score.npy is saved')
     return sim_1_list.numpy()
 
@@ -195,7 +198,7 @@ def train_downstream_classifier(args, model, x_train, y_train, x_test, y_test):
     """
     Generate and save scores
     """
-    test_data = NSL_data(x_test, y_test)
+    test_data = NSLData(x_test, y_test)
     test_loader_0 = torch.utils.data.DataLoader(
         test_data,
         batch_size=args.val_batch_size,
@@ -204,7 +207,7 @@ def train_downstream_classifier(args, model, x_train, y_train, x_test, y_test):
         pin_memory=True,
     )
 
-    train_data = NSL_data(x_train, y_train)
+    train_data = NSLData(x_train, y_train)
     train_loader_0 = torch.utils.data.DataLoader(
         train_data,
         batch_size=args.val_batch_size,
@@ -224,9 +227,9 @@ def train_downstream_classifier(args, model, x_train, y_train, x_test, y_test):
     train_out_new = train_out[0: int(0.8*train_length)]
     valid_out = train_out[int(0.8 * train_length):, :]
 
-    train_new = NSL_data(train_out_new, y_train[0: int(0.8*train_length)])
-    valid_new = NSL_data(valid_out, y_train[int(0.8 * train_length):])
-    test_new = NSL_data(test_out, y_test)
+    train_new = NSLData(train_out_new, y_train[0: int(0.8 * train_length)])
+    valid_new = NSLData(valid_out, y_train[int(0.8 * train_length):])
+    test_new = NSLData(test_out, y_test)
 
     train_loader = torch.utils.data.DataLoader(train_new, batch_size=64, shuffle=True)
     valid_loader = torch.utils.data.DataLoader(valid_new, batch_size=64, shuffle=False)
@@ -260,7 +263,7 @@ def multiclass_test(args, all_data, model):
         data = train_data[idx]
         dict_attack[name] = data
 
-        dataset = NSL_data(data, train_labels[idx])
+        dataset = NSLData(data, train_labels[idx])
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.cal_vec_batch_size,
                                                   shuffle=True, num_workers=args.n_threads, pin_memory=True)
         dict_vec[name] = get_normal_vector(model, data_loader, args.cal_vec_batch_size, args.latent_dim, args.use_cuda)
@@ -268,7 +271,7 @@ def multiclass_test(args, all_data, model):
         # for valid data
         idx = np.where(valid_labels == attack_label)
         data = valid_data[idx]
-        dataset = NSL_data(data, valid_labels[idx])
+        dataset = NSLData(data, valid_labels[idx])
         valid_loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=args.val_batch_size,
@@ -283,7 +286,7 @@ def multiclass_test(args, all_data, model):
         print(f'the threshold for class {name} is set as {dict_th[name]}')
 
     # evaluating the scores of the test dataset and show the IDS performance
-    dataset = NSL_data(test_data, test_labels)
+    dataset = NSLData(test_data, test_labels)
     test_loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=args.val_batch_size,
@@ -353,6 +356,21 @@ def detect_with_manifold(args, model, train_normal, train_anormal, test_dataload
 
     pred_consist = manifold(all_data[selected_idx], all_labels[selected_idx], test_data.cpu(), test_labels)
     return pred_consist
+
+
+def save_score_with_label(score, label, file_path):
+    shape = label.shape
+    if len(shape) < 2:
+        label = np.reshape(label, (-1, 1))
+
+    shape = score.shape
+    if len(shape) < 2:
+        score = np.reshape(score, (-1, 1))
+
+    new_arr = np.concatenate((score, label), axis=1)
+    np.save(file_path, new_arr)
+
+
 
 
 

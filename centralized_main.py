@@ -12,7 +12,8 @@ from utils.utils import adjust_learning_rate, AverageMeter, Logger, get_fusion_l
     post_process, evaluate, get_score, get_threshold
 from nce_average import NCEAverage
 from nce_criteria import NCECriterion
-from utils.setup_NSL import NSL_KDD, NSL_data
+# from utils.setup_NSL_2 import NSLKDD, NSLData
+from utils.setup_NSL_pca import NSLKDD, NSLData
 from model import generate_model
 from models import mlp
 # from models import resnet, shufflenet, shufflenetv2, mobilenet, mobilenetv2
@@ -96,18 +97,18 @@ def main(args):
     attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
     if args.data_partition_type is "normalOverAll":
-        all_data = NSL_KDD(rng, data_type=None)
-        normal_data = NSL_KDD(rng, data_type='normal')
-        anormal_data = NSL_KDD(rng, data_type='anomaly')
+        all_data = NSLKDD(rng, data_type=None)
+        normal_data = NSLKDD(rng, data_type='normal')
+        anormal_data = NSLKDD(rng, data_type='anomaly')
     else:
         attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-        all_data = NSL_KDD(rng, attack, data_type=None)
-        normal_data = NSL_KDD(rng, attack, data_type='normal')
-        anormal_data = NSL_KDD(rng, attack, data_type='anomaly')
+        all_data = NSLKDD(rng, attack, data_type=None)
+        normal_data = NSLKDD(rng, attack, data_type='normal')
+        anormal_data = NSLKDD(rng, attack, data_type='anomaly')
 
     if args.mode == 'train':
         print("=================================Loading Anormaly Training Data!=================================")
-        training_anormal_data = NSL_data(anormal_data.train_data, anormal_data.train_labels)
+        training_anormal_data = NSLData(anormal_data.train_data, anormal_data.train_labels)
         training_anormal_size = int(len(training_anormal_data) * args.a_split_ratio)
         training_anormal_data = torch.utils.data.Subset(training_anormal_data, np.arange(training_anormal_size))
 
@@ -120,7 +121,7 @@ def main(args):
         )
 
         print("=================================Loading Normal Training Data!=================================")
-        training_normal_data = NSL_data(normal_data.train_data, normal_data.train_labels)
+        training_normal_data = NSLData(normal_data.train_data, normal_data.train_labels)
         training_normal_size = int(len(training_normal_data) * args.n_split_ratio)
         training_normal_data = torch.utils.data.Subset(training_normal_data, np.arange(training_normal_size))
 
@@ -134,7 +135,7 @@ def main(args):
 
         print("========================================Loading Validation Data========================================")
 
-        validation_data = NSL_data(all_data.validation_data, all_data.validation_labels)
+        validation_data = NSLData(all_data.validation_data, all_data.validation_labels)
         validation_loader = torch.utils.data.DataLoader(
             validation_data,
             batch_size=args.val_batch_size,
@@ -150,7 +151,7 @@ def main(args):
         print(f'len_pos: {len_pos}')
 
         print("=================================== Loading Test Data =====================================")
-        test_data = NSL_data(all_data.test_data, all_data.test_labels)
+        test_data = NSLData(all_data.test_data, all_data.test_labels)
         test_loader = torch.utils.data.DataLoader(
             test_data,
             batch_size=args.val_batch_size,
@@ -283,7 +284,7 @@ def main(args):
                 states_head = {'state_dict': model_head.state_dict()}
                 torch.save(states_head, head_checkpoint_path)
 
-            if epoch % args.lr_decay == 0:
+            if epoch % args.lr_decay == 0 and epoch <= args.lr_decay:
                 lr = args.learning_rate * (0.1 ** (epoch // args.lr_decay))
                 adjust_learning_rate(optimizer, lr)
                 print(f'New learning rate: {lr}')
@@ -307,7 +308,7 @@ def main(args):
         # multiclass_test(args, all_data, model)
 
         print("================================ Loading Normal Data =====================================")
-        training_normal_data = NSL_data(normal_data.train_data, normal_data.train_labels)
+        training_normal_data = NSLData(normal_data.train_data, normal_data.train_labels)
         training_normal_size = int(len(training_normal_data) * args.n_split_ratio)
         training_normal_data = torch.utils.data.Subset(training_normal_data, np.arange(training_normal_size))
 
@@ -320,16 +321,7 @@ def main(args):
         )
         print(f'train_normal_loader_for_test (size: {len(training_normal_data)})')
 
-        training_anormal_data = NSL_data(anormal_data.train_data, anormal_data.train_labels)
-        train_anormal_loader_for_test = torch.utils.data.DataLoader(
-            training_anormal_data,
-            batch_size=args.cal_vec_batch_size,
-            shuffle=True,
-            num_workers=args.n_threads,
-            pin_memory=True,
-        )
-
-        validation_data = NSL_data(normal_data.validation_data, normal_data.validation_labels)
+        validation_data = NSLData(normal_data.validation_data, normal_data.validation_labels)
         validation_loader = torch.utils.data.DataLoader(
             validation_data,
             batch_size=args.val_batch_size,
@@ -339,7 +331,7 @@ def main(args):
         )
 
         print("================================ Loading Test Data =====================================")
-        test_data = NSL_data(all_data.test_data, all_data.test_labels)
+        test_data = NSLData(all_data.test_data, all_data.test_labels)
         test_loader = torch.utils.data.DataLoader(
             test_data,
             batch_size=args.val_batch_size,
@@ -347,13 +339,6 @@ def main(args):
             num_workers=args.n_threads,
             pin_memory=True,
         )
-
-        # normal_len = len(training_normal_data)
-        # anormal_len = len(training_anormal_data)
-        # test_len = len(test_data)
-        # pred_consist = detect_with_manifold(args, model, train_normal_loader_for_test,
-        #                                     train_anormal_loader_for_test, test_loader,
-        #                                     normal_len, anormal_len, test_len, all_data.test_labels)
 
         print("=================================START EVALUATING=========================================")
         normal_vec = get_normal_vector(model, train_normal_loader_for_test,
@@ -369,10 +354,10 @@ def main(args):
 
         # evaluating the scores of the test dataset and show the IDS performance
         score_folder = args.score_folder
-        cal_score(model, normal_vec, test_loader, score_folder, args.use_cuda)
-        score = get_score(score_folder)
+        score = cal_score(model, normal_vec, test_loader, score_folder, args.use_cuda)
+        # score = get_score(score_folder)
 
-        # split_evaluate_two_steps(pred_consist, all_data.test_labels, score, manual_th=th, perform_dict=None)
+        # split_evaluate_two_st='eps(pred_consist, all_data.test_labels, score, manual_th=th, perform_dict=None)
 
         performance_dict = dict()
         split_evaluate(all_data.test_labels, score, plot=True,
@@ -389,12 +374,36 @@ def main(args):
         # train_downstream_classifier(args, model, all_data.train_data, all_data.train_labels,
         #                             all_data.test_data, all_data.test_labels)
 
+        # ----------------- evaluate the performance of detecting novel attacks
+        # test_data_novel = NSL_data(all_data.test_data_novel, all_data.test_labels_novel)
+        # test_loader_novel = torch.utils.data.DataLoader(
+        #     test_data_novel,
+        #     batch_size=args.val_batch_size,
+        #     shuffle=False,
+        #     num_workers=args.n_threads,
+        #     pin_memory=True,
+        # )
+        # score_folder = args.score_folder
+        # score_file = os.path.join(score_folder, 'score.npy')
+        # score = cal_score(model, normal_vec, test_loader_novel, score_file, args.use_cuda)
+        # # score = get_score(score_folder)
+        #
+        # performance_dict = dict()
+        # split_evaluate(all_data.test_labels_novel, score, plot=True,
+        #                filename=f'{args.result_folder}contrastive', manual_th=th, perform_dict=performance_dict)
+
+        # normal_len = len(training_normal_data)
+        # anormal_len = len(training_anormal_data)
+        # test_len = len(test_data)
+        # pred_consist = detect_with_manifold(args, model, train_normal_loader_for_test,
+        #                                     train_anormal_loader_for_test, test_loader,
+        #                                     normal_len, anormal_len, test_len, all_data.test_labels)
+
 
 if __name__ == '__main__':
     gv.init('centralized')
     args = gv.args
     args.manual_seed = 2
-
     args.data_partition_type = 'normalOverAll'
 
     if args.data_partition_type is 'normalOverAll':

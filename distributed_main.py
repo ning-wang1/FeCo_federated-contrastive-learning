@@ -9,7 +9,7 @@ import global_vars as gv
 
 from utils.data_split import get_dataset
 from utils.utils import Logger, per_class_acc, split_evaluate, set_random_seed
-from utils.setup_NSL import NSL_KDD, NSL_data
+from utils.setup_NSL_2 import NSLKDD, NSLData
 from model import generate_model
 from models import mlp
 
@@ -24,21 +24,21 @@ def main(args):
         attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
         if args.data_partition_type is "normalOverAll":
-            all_data = NSL_KDD(rng, data_type=None)
-            normal_data = NSL_KDD(rng, data_type='normal')
-            anormal_data = NSL_KDD(rng, data_type='anomaly')
+            all_data = NSLKDD(rng, data_type=None)
+            normal_data = NSLKDD(rng, data_type='normal')
+            anormal_data = NSLKDD(rng, data_type='anomaly')
         else:
             attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-            all_data = NSL_KDD(rng, attack, data_type=None)
-            normal_data = NSL_KDD(rng, attack, data_type='normal')
-            anormal_data = NSL_KDD(rng, attack, data_type='anomaly')
+            all_data = NSLKDD(rng, attack, data_type=None)
+            normal_data = NSLKDD(rng, attack, data_type='normal')
+            anormal_data = NSLKDD(rng, attack, data_type='anomaly')
 
     train_normal, train_anormal, valid_data, test_data, user_groups_normal, user_groups_anormal = get_dataset(
         args, all_data, normal_data, anormal_data)
 
     _, test_labels = test_data[:]
     _, valid_labels = valid_data[:]
-    valid_normal = NSL_data(normal_data.validation_data, normal_data.validation_labels)
+    valid_normal = NSLData(normal_data.validation_data, normal_data.validation_labels)
 
     # setup logger
     batch_logger = Logger(os.path.join(args.log_folder, 'batch.log'), ['epoch', 'batch', 'loss', 'probs', 'lr'],
@@ -121,10 +121,12 @@ if __name__ == "__main__":
     args = gv.args
 
     args.data_partition_type = 'normalOverAll'
-    args.data_distribution = 'non-iid'
+    args.data_distribution = 'iid'
     args.learning_rate = 0.001
-    args.local_epochs = 50
-    args.num_users = 50
+    args.local_epochs = 30
+    args.num_users = 60
+
+    args.cal_vec_batch_size = 50
 
     args.mode = 'train'
     main(args)

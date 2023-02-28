@@ -9,6 +9,7 @@ import time
 import torch.optim as optim
 import numpy as np
 import pickle
+import csv
 
 from utils.logs import AD_Log
 from utils.utils import split_evaluate, get_threshold
@@ -213,14 +214,14 @@ class AETrainer(object):
 
         return ae_net
 
-    def test(self, dataset, ae_net):
+    def test(self, dataset, ae_net, file_path):
         logger = logging.getLogger()
 
         # Set device for network
         ae_net = ae_net.to(self.device)
 
         # Get test data loader
-        _, test_loader, valid_loader = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+        train_loader, test_loader, valid_loader = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
 
         # Testing
         logger.info('Testing autoencoder...')
@@ -269,8 +270,14 @@ class AETrainer(object):
         valid_labels, valid_scores = zip(*valid_label_score)
         idxs = np.where(np.array(valid_labels) == 1)
         normal_scores_valid = np.array(valid_scores)[idxs]
-        th = get_threshold(normal_scores_valid, percent=3)
-        split_evaluate(labels, scores, plot=True, filename='./result/detection/ae', manual_th=th)
+        th = get_threshold(normal_scores_valid, percent=2)
+        dic = dict()
+        split_evaluate(labels, scores, plot=True, filename=file_path + 'ae', manual_th=th, perform_dict=dic)
+
+        with open(file_path + 'ae.csv', 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=dic.keys())
+            writer.writeheader()
+            writer.writerow(dic)
         # split_evaluate(labels, scores, filename='./result/detection/ae')
 
         test_time = time.time() - start_time

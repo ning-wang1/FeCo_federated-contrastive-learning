@@ -19,7 +19,7 @@ def average_weights(w):
     return w_avg
 
 
-def test_inference(args, model, train_normal, valid_normal, test_data):
+def test_inference(args, model, train_normal, valid_normal, test_data, percent=1):
     model.eval()
     # Test inference after completion of training
     train_normal_loader_for_test = torch.utils.data.DataLoader(
@@ -27,7 +27,8 @@ def test_inference(args, model, train_normal, valid_normal, test_data):
         batch_size=args.cal_vec_batch_size,
         shuffle=True,
         num_workers=args.n_threads,
-        pin_memory=True)
+        pin_memory=True,
+        drop_last=True,)
 
     test_loader = torch.utils.data.DataLoader(
         test_data,
@@ -35,6 +36,7 @@ def test_inference(args, model, train_normal, valid_normal, test_data):
         shuffle=False,
         num_workers=args.n_threads,
         pin_memory=True,
+        drop_last=True,
     )
 
     validation_loader = torch.utils.data.DataLoader(
@@ -43,6 +45,7 @@ def test_inference(args, model, train_normal, valid_normal, test_data):
         shuffle=False,
         num_workers=args.n_threads,
         pin_memory=True,
+        drop_last=True,
     )
     normal_vec = get_normal_vector(model, train_normal_loader_for_test,
                                    args.cal_vec_batch_size,
@@ -51,8 +54,8 @@ def test_inference(args, model, train_normal, valid_normal, test_data):
     np.save(os.path.join(args.normvec_folder, 'normal_vec.npy'), normal_vec.cpu().numpy())
 
     valid_scores = cal_score(model, normal_vec, validation_loader, None, args.use_cuda)
-    th = get_threshold(valid_scores, percent=3)
+    th = get_threshold(valid_scores, percent=percent)
 
-    score = cal_score(model, normal_vec, test_loader, args.score_folder, args.use_cuda)
+    score = cal_score(model, normal_vec, test_loader, os.path.join(args.score_folder, 'score.npy'), args.use_cuda)
 
     return score, th

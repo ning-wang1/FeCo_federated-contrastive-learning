@@ -99,7 +99,7 @@ def average_recall_precision(file_path):
     else:
         print(f'the final recall is {recall[row_num-1]}')
         print(f'the final precision is {precision[row_num-1]}')
-        print(f'the fibal fpr is {fpr[row_num-1]} \n')
+        print(f'the final fpr is {fpr[row_num-1]} \n')
 
 
 def check_recall(recall_ls, recall_all):

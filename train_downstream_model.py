@@ -10,7 +10,7 @@ import csv
 import os
 import time
 import random
-from utils.setup_NSL import NSL_KDD, NSL_data
+from utils.setup_NSL_2 import NSLKDD, NSLData
 from utils.utils import set_random_seed
 import numpy as np
 
@@ -233,7 +233,7 @@ if __name__ == '__main__':
     args = gv.args
     rng = set_random_seed(args.manual_seed, args.use_cuda)
 
-    all_data = NSL_KDD(rng, data_type=None)
+    all_data = NSLKDD(rng, data_type=None)
 
     x_train = all_data.train_data
     x_test = all_data.test_data
@@ -242,13 +242,13 @@ if __name__ == '__main__':
     # y_train = all_data.train_labels
     # y_test = all_data.test_labels
 
-    test_data = NSL_data(x_test, y_test)
+    test_data = NSLData(x_test, y_test)
     test_loader = torch.utils.data.DataLoader(
         test_data,
         batch_size=64,
         shuffle=False)
 
-    train_data = NSL_data(x_train, y_train)
+    train_data = NSLData(x_train, y_train)
     train_loader = torch.utils.data.DataLoader(
         train_data,
         batch_size=64,

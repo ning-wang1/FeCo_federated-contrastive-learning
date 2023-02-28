@@ -5,13 +5,14 @@ import argparse
 import logging
 import os
 
-from utils.setup_NSL import NSL_KDD
+from utils.setup_NSL_2 import NSLKDD
 from models.iso_forest import IsoForest
 from models.kde import KDE
 from models.ocsvm import SVM
 from models.vae import NSL_MLP_Autoencoder, AETrainer
-from utils.setup_NSL import NSL_Dataset
+from utils.setup_NSL_2 import NSLDataset
 from utils.utils import get_threshold, set_random_seed
+from sklearn.neighbors import LocalOutlierFactor
 # from utils.logs import log_exp_config, log_isoForest, log_AD_results
 
 
@@ -25,8 +26,8 @@ def get_args():
     parser.add_argument("--dataset", help="dataset name", type=str, choices=["mnist", "cifar10", "gtsrb"])
     parser.add_argument("--data_partition_type", help="whether it is a binary classification (normal or attack)",
                         default='normalOverAll', choices=["normalOverAll", "DoS", "Probe", "U2R", "R2L"], type=str)
-    parser.add_argument("--xp_dir", default='./result', help="directory for the experiment", type=str)
-    parser.add_argument("--plot_dir", default='./result/detection', help="directory for figures", type=str)
+    parser.add_argument("--xp_dir", default='./result/one class/detection/', help="directory for the experiment", type=str)
+    # parser.add_argument("--plot_dir", default='./result/one class/detection', help="directory for figures", type=str)
     parser.add_argument("--model_name", type=str, default='iso_forest',
                         choices=["isoForest", 'kde', 'svm', 'ae'])
 
@@ -60,7 +61,7 @@ def get_args():
     parser.add_argument('--lr', type=float, default=0.0001,
                         help='Initial learning rate for Deep SVDD network training. Default=0.001')
     parser.add_argument('--n_epochs', type=int, default=50, help='Number of epochs to train.')
-    parser.add_argument('--lr_milestone', default=[20],
+    parser.add_argument('--lr_milestone', default=[30],
                         help='Lr scheduler milestones at which lr is multiplied by 0.1.')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for mini-batch training.')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
@@ -74,8 +75,10 @@ def get_args():
 
 def main():
     args = get_args()
-    args.model_name = 'ae'
-    args.seed = 4
+    # args.model_name = 'isoForest'
+    # args.model_name = 'ae'
+    # args.model_name = 'svm'
+    args.seed = 0
     print('Options: {}', args)
 
     rng = set_random_seed(args.seed)
@@ -84,17 +87,18 @@ def main():
 
     # load data
     if args.data_partition_type is "normalOverAll":
-        data = NSL_KDD(rng, data_type=None)
-        normal_data = NSL_KDD(rng, data_type='normal')
+        data = NSLKDD(rng, data_type=None, fea_selection=False)
+        normal_data = NSLKDD(rng, data_type='normal', fea_selection=False)
     else:
         attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-        data = NSL_KDD(rng, attack, data_type=None)
-        normal_data = NSL_KDD(rng, attack, data_type='normal')
+        data = NSLKDD(rng, attack, data_type=None, fea_selection=False)
+        normal_data = NSLKDD(rng, attack, data_type='normal', fea_selection=False)
 
     if not os.path.exists(args.xp_dir):
         os.mkdir(args.xp_dir)
     assert os.path.exists(args.xp_dir)
-    plot_save_path = os.path.join(args.plot_dir, args.data_partition_type + '_' + args.model_name)
+
+    plot_save_path = os.path.join(args.xp_dir, args.data_partition_type + '_' + args.model_name)
 
     # logging
     logging.basicConfig(level=logging.INFO)
@@ -104,6 +108,11 @@ def main():
         model = IsoForest(args.seed, train_data=normal_data.train_data, test_data=data.test_data,
                           test_labels=data.test_labels, n_estimators=args.n_estimators,
                           max_samples=args.max_samples, contamination=args.contamination)
+
+        model = IsoForest(args.seed, train_data=normal_data.train_data, test_data=data.test_data_novel,
+                          test_labels=data.test_labels_novel, n_estimators=args.n_estimators,
+                          max_samples=args.max_samples, contamination=args.contamination)
+
         # train model and predict
         model.train()
         model.predict(save_path=plot_save_path)
@@ -133,7 +142,7 @@ def main():
         if not torch.cuda.is_available():
             device = 'cpu'
 
-        dataset = NSL_Dataset(rng, normal_class=1, data_partition_type=args.data_partition_type)
+        dataset = NSLDataset(rng, normal_class=1, data_partition_type=args.data_partition_type)
 
         # train autoencoder on dataset
         model = NSL_MLP_Autoencoder()
@@ -142,7 +151,7 @@ def main():
                                weight_decay=args.weight_decay, device=device,
                                n_jobs_dataloader=args.n_jobs_dataloader)
         model = ae_trainer.train(dataset, model)
-        ae_trainer.test(dataset, model)
+        ae_trainer.test(dataset, model, file_path=args.xp_dir)
 
     else:
         print('error: the model name is not in file')
