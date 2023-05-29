@@ -10,6 +10,7 @@ import copy
 from matplotlib import pyplot as plt
 import seaborn as sns
 import textwrap
+from sklearn.decomposition import PCA
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
@@ -769,6 +770,15 @@ def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col
                 bbox_inches='tight')
 
 
+def select_feas_pca(x_train, x_test, y_train, y_test, n_component=50):
+    print('the dimensionality before pca: {}'.format(x_train.shape[1]))
+    pca = PCA(n_components=n_component)
+    pca.fit(x_train)
+    x_train = pca.transform(x_train)
+    x_test = pca.transform(x_test)
+    return x_train, x_test, y_train, y_test
+
+
 class NSLKDD:
     def __init__(self, rng, attack_class=None, data_type=None, fea_selection=True, scaler_name='std_scale'):
 
@@ -786,18 +796,19 @@ class NSLKDD:
 
                 x_col_name1 = x_col_name1.tolist()
 
-                x2, x_col_name2 = correlation_check(x1, x_col_name1, th=0.2, variances=variances, plot=True)
+                x2, x_col_name2 = correlation_check(x1, x_col_name1, th=0.2, variances=variances, plot=True)  # th=0.2
 
                 cate_features = binary_col + categorical_col
                 l2 = len(cate_features)
                 numerical_features = [fea for fea in x_col_name2 if fea not in cate_features]
                 l1 = len(numerical_features)
+                print('l1: {} l2: {}'.format(l1, l2))
 
                 # for categorical features and numerical feature
                 selected_features_categorical, mutual_score = mutual_information(x2[:, l1:], y, cate_features,
-                                                                                 k=l2 - 3)
+                                                                                 k=l2 - 4)
                 selected_features_numerical, anova_score = anova(x2[:, 0: l1], y, numerical_features,
-                                                                 k=l1 - 3)
+                                                                 k=l1 - 2)
 
                 plot_ben_mal(numerical_features, selected_features_numerical, df_train_original, y)
                 plot_scores(anova_score, mutual_score, numerical_features, cate_features, x_col_name1)
@@ -812,11 +823,16 @@ class NSLKDD:
                 # selected_features = list(set(x_col_name) - set(removed_features))
 
                 # rank the features based on the correlation
+                # selected_features = [fea for fea in cols_cor if fea in selected_features]
+
                 selected_features = [fea for fea in cols_cor if fea in selected_features]
 
                 np.save('./dataset/NSL_KDD/selected_features.npy', selected_features)
         else:
-            selected_features = datacols_no_outbound
+            selected_features = x_col_name
+            print('difference ?????????????????????????????????????????????????????????????????')
+            print(set(x_col_name)-set(cols_cor))
+            print(set(cols_cor) - set(x_col_name))
 
         # print('selected_features -----------\n.', selected_features)
         # print('removed features -------------\n', list(set(x_col_name) - set(selected_features)))
@@ -831,7 +847,11 @@ class NSLKDD:
             x_train, x_test, y_train, y_test, y_train_multi_class, y_test_multi_class, cat_num_dict = \
                 data_partition(x, y, x_col_name, test, selected_features, attack_class)
 
+        # x_train, x_test, y_train, y_test = select_feas_pca(x_train, x_test, y_train, y_test, n_component=50)
         # train data shuffling
+        print('the number of features, ', x_train.shape)
+
+        np.random.seed(1)
         train_len = x_train.shape[0]
         idx = list(range(train_len))
         np.random.shuffle(idx)

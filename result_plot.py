@@ -130,7 +130,7 @@ def plot_fpr():
     fig.savefig('recall_fpr.pdf')
 
 
-def distribution_plot(data):
+def distribution_plot(data, device_name=0):
     scores = data[:, 0]
     labels = data[:, 1]
     loc = np.where(labels==1)
@@ -141,21 +141,25 @@ def distribution_plot(data):
 
     fig = plt.figure(figsize=(4.2,3.1))
     plt.subplot(211)
-    sns.distplot(scores_pos, hist=True, kde=False,
-                color='darkblue',
-                 hist_kws={'edgecolor': 'black'},
-                 kde_kws={'linewidth': 2})
+    # sns.distplot(scores_pos, hist=True, kde=False,
+    #             color='darkblue',
+    #              hist_kws={'edgecolor': 'black'},
+    #              kde_kws={'linewidth': 2})
+    sns.histplot(scores_pos, kde=False, color='red',
+                 binwidth=0.03)
     # plt.legend(['Density', 'Intrusion traffic'], loc=9, bbox_to_anchor=(0.45, 0.95))
     plt.legend(['Intrusion traffic'], loc=9, bbox_to_anchor=(0.45, 0.95))
     plt.ylabel('Frequency')
-    # plt.xlim([-1.05,1.05])
+    plt.xlim([-0.75,1.05])
 
     plt.subplot(212)
-    sns.distplot(scores_neg, hist=True, kde=False, color='red',
-                 hist_kws={'edgecolor': 'black'},
-                 kde_kws={'linewidth': 2})
+    # sns.distplot(scores_neg, hist=True, kde=False, color='red',
+    #              hist_kws={'edgecolor': 'black'},
+    #              kde_kws={'linewidth': 2})
+    sns.histplot(scores_neg, kde=False, color='blue',
+                 binwidth=0.03)
     plt.xlabel('Cosine similarity with normal template')
-    # plt.xlim([-1.05, 1.05])
+    plt.xlim([-0.75, 1.05])
     # plt.legend(['Density', 'Benign traffic'], loc=9, bbox_to_anchor=(0.45, 0.95))
     plt.legend(['Benign traffic'], loc=9, bbox_to_anchor=(0.45, 0.95))
     plt.ylabel('Frequency')
@@ -213,8 +217,6 @@ def bar_plot_fpr():
                        methods[2]: [0.0575, 0.0584, 0.0624],
                        methods[3]: [0.0007, 0.0007, 0.0008]}
 
-
-
     # Make the plot
     fig = plt.figure(figsize=(6, 4))
     barWidth = 0.2
@@ -235,98 +237,92 @@ def bar_plot_fpr():
     # Adding Xticks
     # plt.xlabel('Branch', fontweight='bold', fontsize=15)
     plt.ylabel('FPR')
+    plt.xlim([-0.5,1])
     plt.xticks([r + 1.5*barWidth for r in range(9)],
                names, rotation = 35)
     plt.legend()
     plt.show()
-    fig.savefig('recall_fpr.pdf')
+    fig.savefig('ploting/recall_fpr.pdf')
 
 
-def bar_plot_accuracy():
-    methods = ['Original Data (FedAvg)', 'Original Data (Krum)', 'Original Data (Coomed)',
-               'Original Data (Tmean)', 'Original Data (Bylyan)', 'Original Data (FLTrust)',
-               'PLR (FLARE)']
-    fpr = {}
-    names = ['fMNIST', 'CIFAR-10', 'KATHER']
-    fpr['fMNIST'] = {methods[0]: 8.3,
-                       methods[1]: 98.3,
-                       methods[2]: 45,
-                       methods[3]: 43.3,
-                       methods[4]: 71.6,
-                       methods[5]: 40,
-                       methods[6]: 0
-                       }
-    fpr['CIFAR-10'] = {methods[0]: 26.7,
-                       methods[1]: 100,
-                       methods[2]: 53.3,
-                       methods[3]: 33.3,
-                       methods[4]: 65.0,
-                       methods[5]: 0,
-                       methods[6]: 0
-                       }
+def pca_compare():
+    fea_num = ['20', '40', '60', '80', '100', '120']
+    acc_seed1 = np.array([0.8320, 0.8835, 0.8656, 0.8707, 0.8672, 0.8704])
+    acc_seed2 = np.array([0.8054, 0.8559, 0.8628, 0.8656, 0.8570, 0.8437])
+    acc_seed3 = np.array([0.8142, 0.8707, 0.8757, 0.8632, 0.8666, 0.8716])
 
-    fpr['KATHER'] = {methods[0]: 41.6,
-                       methods[1]: 86.7,
-                       methods[2]: 33.3,
-                       methods[3]: 41.7,
-                       methods[4]: 56.7,
-                       methods[5]: 19.4,
-                       methods[6]: 0
+    recall_seed1 = np.array([0.6175, 0.8475, 0.8272, 0.8276, 0.8077, 0.8061])
+    recall_seed2 = np.array([0.6099, 0.8056, 0.7931, 0.8216, 0.7832, 0.7587])
+    recall_seed3 = np.array([0.5997, 0.8480, 0.8348, 0.08276, 0.8143, 0.8229])
 
-                       }
+    acc_avg = (acc_seed1 + acc_seed2 + acc_seed3)/3
+    print(acc_avg)
+    recall_avg = (recall_seed1 + recall_seed2 + recall_seed3)/3
 
+    std = [np.std(np.array([acc_seed1[i], acc_seed2[i], acc_seed3[i]])) for i in range(len(fea_num))]
+    fig, ax = plt.subplots(figsize=(6, 4))
 
-    # Make the plot
-    fig = plt.figure(figsize=(6, 3))
-    barWidth = 0.1
-    br1 = np.arange(3)
-    br2 = [x + barWidth for x in br1]
-    br3 = [x + 2*barWidth for x in br1]
-    br4 = [x + 3*barWidth for x in br1]
-    br5 = [x + 4*barWidth for x in br1]
-    br6 = [x + 5 * barWidth for x in br1]
-    br7 = [x + 6 * barWidth for x in br1]
-
-    plt.bar(br1, [fpr[d][methods[0]] for d in names], color='red', width=barWidth,
-            edgecolor='r', label=methods[0])
-    plt.bar(br2, [fpr[d][methods[1]] for d in names], color='blue', width=barWidth,
-            edgecolor='b', label=methods[1])
-
-    plt.bar(br3, [fpr[d][methods[6]] for d in names], color='k', width=barWidth,
-            edgecolor='k', label=methods[6])
-    plt.bar(br4, [fpr[d][methods[3]] for d in names], color='y', width=barWidth,
-            edgecolor='y', label=methods[3])
-
-    plt.bar(br5, [fpr[d][methods[4]] for d in names], color='c', width=barWidth,
-            edgecolor='c', label=methods[4])
-    plt.bar(br6, [fpr[d][methods[5]] for d in names], color='m', width=barWidth,
-            edgecolor='m', label=methods[5])
-
-    plt.bar(br7, [fpr[d][methods[2]] for d in names], color='g', width=barWidth,
-            edgecolor='g', label=methods[2])
-    # plt.plot(br7, [fpr[d][methods[6]] for d in names], color='g', label=methods[6])
-
-
-
-
-    # Adding Xticks
-    # plt.xlabel('Branch', fontweight='bold', fontsize=15)
-    plt.ylabel('Attack Success Rate')
-    plt.ylim([-1,110])
-    plt.xticks([r + 1.5*barWidth for r in range(3)],
-               names, rotation = 0)
-    plt.legend()
+    ax.errorbar(fea_num, acc_avg, yerr=std, fmt='o-k',capsize=3)
+    # plt.plot(fea_num, [0.8955]*6)
+    ax.set_ylim([0.7, 0.95])
+    ax.set_xlabel('Number of Components to keep (number of features)')
+    ax.set_ylabel('Accuracy')
+    plt.grid(axis='y',  linestyle='--', linewidth=0.5)
     plt.show()
-    fig.savefig('recall_fpr.pdf')
+    fig.savefig('/home/ning/extens/federated_contrastive/result/accuracy_PCA.pdf')
+
+    # std = [np.std(np.array([recall_seed1[i], recall_seed2[i], recall_seed3[i]])) for i in range(len(fea_num))]
+    # fig, ax = plt.subplots()
+    #
+    # ax.bar(fea_num, recall_avg, yerr=std)
+    # # plt.plot(fea_num, [0.8680] * 6)
+    # plt.grid()
+    # ax.set_ylim([0, 0.9])
+    # plt.show()
+
+def plot_recall_ablation():
+    fpr = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+    feco = [[0.5366, 0.7460, 0.8057, 0.8512, 0.8691, 0.8735],
+            [0.5219, 0.6932, 0.8092, 0.8441, 0.8675, 0.8930],
+            [0.5597, 0.7591, 0.8286, 0.8616, 0.8697, 0.8720]]
+    rep_plus_detect = [[0.5512, 0.7412, 0.8089, 0.8477, 0.8759, 0.8851],
+                       [0.5570, 0.6952, 0.7790, 0.8449, 0.8654, 0.88126],
+                       [0.5830, 0.7545, 0.8443, 0.8508, 0.8579, 0.8808]]
+
+    fea_plus_detect = [[0.4855, 0.5959, 0.5985, 0.6268, 0.6593, 0.6843],
+                       [0.4855, 0.5959, 0.5985, 0.6268, 0.6593, 0.6843],
+                       [0.4855, 0.5959, 0.5985, 0.6268, 0.6593, 0.6843]]
+
+    detect = [[0.5440, 0.6078, 0.6087, 0.6295, 0.6622, 0.7002],
+              [0.5440, 0.6078, 0.6087, 0.6295, 0.6622, 0.7002],
+              [0.5440, 0.6078, 0.6087, 0.6295, 0.6622, 0.7002]]
+
+    x = [0.02, 0.04, 0.06, 0.08, 0.1, 0.12]
+
+    fig = plt.figure(figsize=(6, 4))
+    plt.plot(x, np.array(detect).sum(axis=0) / 3, marker='s',
+             label='Fea($\\times$)-Rep($\\times$)-Detect($\checkmark$)')
+    plt.plot(x, np.array(fea_plus_detect).sum(axis=0) / 3, marker='d',
+             label='Fea($\\checkmark$)-Rep($\\times$)-Detect($\checkmark$)')
+    plt.plot(x, np.array(rep_plus_detect).sum(axis=0) / 3, marker='^',
+             label='Fea($\\times$)-Rep($\checkmark$)-Detect($\checkmark$)')
+    plt.plot(x, np.array(feco).sum(axis=0) / 3, marker='o',
+             label='Fea($\checkmark$)-Rep($\checkmark$)-Detect($\checkmark$)')
+    plt.legend()
+    plt.xlabel('FPR')
+    plt.ylabel('Recall')
+    plt.show()
+    fig.savefig('ploting/ablation.pdf')
 
 
 if __name__ == '__main__':
     dir = os.getcwd()
-    # for i in range(9):
-    #     device_name = DEVICE_NAMES[i]
-    #     score_file= os.path.join(dir, f'result/score/centralized/score_label_{device_name}.npy')
-    #     score_label = np.load(score_file)
-    #     distribution_plot(score_label)
+    for i in range(9):
+        device_name = DEVICE_NAMES[i]
+        score_file= os.path.join(dir, f'result/score/centralized/score_label_{device_name}.npy')
+        score_label = np.load(score_file)
+        distribution_plot(score_label, device_name)
     # plot_fpr()
     # bar_plot_fpr()
-    bar_plot_accuracy()
+    # pca_compare()
+    # plot_recall_ablation()

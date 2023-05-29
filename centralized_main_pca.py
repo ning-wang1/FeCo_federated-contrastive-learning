@@ -10,7 +10,7 @@ from test import get_normal_vector, split_acc_diff_threshold, cal_score
 from utils.utils import adjust_learning_rate, AverageMeter, Logger, l2_normalize, get_threshold
 from nce_average import NCEAverage
 from nce_criteria import NCECriterion
-from utils.setup_NSL_2 import NSLKDD, NSLData
+from utils.setup_NSL_pca_2 import NSLKDD, NSLData
 from model import generate_model
 from models import mlp
 from utils.utils import split_evaluate, per_class_acc, set_random_seed
@@ -83,8 +83,8 @@ def train(train_normal_loader, train_anormal_loader, model, model_head, nce_aver
     return memory_bank, losses.avg
 
 
-def main(args):
-    rng = set_random_seed(args.manual_seed, args.use_cuda)
+def main(args, n_component=50):
+    set_random_seed(args.manual_seed, args.use_cuda)
     if args.nesterov:
         dampening = 1
     else:
@@ -93,14 +93,14 @@ def main(args):
     attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
 
     if args.data_partition_type is "normalOverAll":
-        all_data = NSLKDD(rng, data_type=None)
-        normal_data = NSLKDD(rng, data_type='normal')
-        anormal_data = NSLKDD(rng, data_type='anomaly')
+        all_data = NSLKDD(args.manual_seed, data_type=None, n_component=n_component)
+        normal_data = NSLKDD(args.manual_seed, data_type='normal',  n_component=n_component)
+        anormal_data = NSLKDD(args.manual_seed, data_type='anomaly',  n_component=n_component)
     else:
         attack = [(args.data_partition_type, attack_type[args.data_partition_type])]
-        all_data = NSLKDD(rng, attack, data_type=None)
-        normal_data = NSLKDD(rng, attack, data_type='normal')
-        anormal_data = NSLKDD(rng, attack, data_type='anomaly')
+        all_data = NSLKDD(args.manual_seed, attack, data_type=None,  n_component=n_component)
+        normal_data = NSLKDD(args.manual_seed, attack, data_type='normal',  n_component=n_component)
+        anormal_data = NSLKDD(args.manual_seed, attack, data_type='anomaly', n_component=n_component)
 
     if args.mode == 'train':
         print("=================================Loading Anormaly Training Data!=================================")
@@ -117,7 +117,7 @@ def main(args):
         )
 
         print("=================================Loading Normal Training Data!=================================")
-        training_normal_data = NSLData(normal_data.train_data[0:10000,:], normal_data.train_labels[0:10000])
+        training_normal_data = NSLData(normal_data.train_data, normal_data.train_labels)
         training_normal_size = int(len(training_normal_data) * args.n_split_ratio)
         training_normal_data = torch.utils.data.Subset(training_normal_data, np.arange(training_normal_size))
 
@@ -215,13 +215,7 @@ def main(args):
                 print("=============================!!!Evaluating!!!===================================")
                 normal_vec = torch.mean(torch.cat(memory_bank, dim=0), dim=0, keepdim=True)
                 normal_vec = l2_normalize(normal_vec)
-
                 model.eval()
-
-                # accuracy, best_threshold, acc_n, acc_a, acc_list, acc_n_list, acc_a_list = split_acc_diff_threshold(
-                #     model, normal_vec, test_loader, args.use_cuda)
-                # print(f'testing Epoch: {epoch}/{args.epochs} | Accuracy: {accuracy} | Normal Acc: {acc_n}'
-                #       f' | Anormal Acc: {acc_a} | Threshold: {best_threshold}')
 
                 accuracy, best_threshold, acc_n, acc_a, acc_list, acc_n_list, acc_a_list = split_acc_diff_threshold(
                     model, normal_vec, validation_loader, args.use_cuda)
@@ -294,14 +288,10 @@ def main(args):
         model = generate_model(args, input_size=all_data.train_data.shape[1])
         resume_path = os.path.join(args.checkpoint_folder,
                                    f'best_model_{args.model_type}.pth')
-        # model_id = 9
-        # resume_path = './checkpoints/' + args.model_type + '_{}.pth'.format(model_id*10)
+
         resume_checkpoint = torch.load(resume_path)
         model.load_state_dict(resume_checkpoint['state_dict'])
-
         model.eval()
-
-        # multiclass_test(args, all_data, model)
 
         print("================================ Loading Normal Data =====================================")
         training_normal_data = NSLData(normal_data.train_data, normal_data.train_labels)
@@ -351,9 +341,6 @@ def main(args):
         # evaluating the scores of the test dataset and show the IDS performance
         score_folder = args.score_folder
         score = cal_score(model, normal_vec, test_loader, score_folder, args.use_cuda)
-        # score = get_score(score_folder)
-
-        # split_evaluate_two_st='eps(pred_consist, all_data.test_labels, score, manual_th=th, perform_dict=None)
 
         performance_dict = dict()
         split_evaluate(all_data.test_labels, score, plot=True,
@@ -373,30 +360,25 @@ if __name__ == '__main__':
     args.data_partition_type = 'normalOverAll'
 
     if args.data_partition_type is 'normalOverAll':
-        # args.epochs = 60
-        # args.val_step = 30
-        # args.save_step = 30
-        # args.tau = 0.03
-        # args.learning_rate = 0.001
-        # args.lr_decay = 45
-        # args.n_train_batch_size = 5
 
         args.epochs = 60
-        args.val_step = 60
-        args.save_step = 60
-        args.tau = 0.02
+        args.val_step = 30
+        args.save_step = 30
+        args.tau = 0.03
         args.learning_rate = 0.001
         args.lr_decay = 45
-        args.n_train_batch_size =5
+        args.n_train_batch_size = 5
 
     else:
         args.epochs = 50
         args.val_step = 10
         args.save_step = 10
     #
-    args.manual_seed = 2
+    args.manual_seed = 1
+    n = 50
     args.mode = 'train'
-    main(args)
+    main(args, n_component=n)
     args.mode = 'test'
-    main(args)
+    main(args, n_component=n)
+    print('seed={} and pca dim={}'.format(args.manual_seed, n))
 

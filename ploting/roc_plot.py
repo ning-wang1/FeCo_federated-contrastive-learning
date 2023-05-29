@@ -368,7 +368,7 @@ if __name__ == "__main__":
     filenames = ['fl/old/metrics_iid_lr0.001_clients50_seed1_epochs52_le4_frac0.1.csv',
                  'fl/old/metrics_non-iid_lr0.001_clients50_seed1_epochs52_le4_frac0.1.csv',
                  'fl/old/metrics_attack-split_lr0.001_clients4_seed1_epochs52_le4_frac1.csv']
-    boxplot_acc([read_path + filename for filename in filenames])
+    # boxplot_acc([read_path + filename for filename in filenames])
     #
     # bar_plot(read_path + 'distributed/metrics_attack-split_lr0.001_clients4_seed1.csv')
     #

@@ -1,4 +1,3 @@
-# feature selection is based on PCA
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
@@ -9,39 +8,23 @@ import itertools
 import sys
 import copy
 from matplotlib import pyplot as plt
-import seaborn as sns
-import textwrap
+from utils.utils import set_random_seed
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import LabelEncoder
-from collections import Counter
+
 from collections import defaultdict
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import RFE
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import f_regression
-from sklearn.feature_selection import mutual_info_regression
-
-# from scipy.stats import spearmanr
-# from scipy.cluster import hierarchy
 import scipy.stats
 import scipy.cluster
-
-# from keras.models import Sequential
-# from keras.layers import Dense
-from utils.classifier import evaluate_sub
 
 
 FEATURE_NUM = 35  # the number of selected features
 VALIDATION_SIZE = 5000
 NORMAL_TRAIN_NUM = 20000
-# file paths of training and testing data
-# train_file_path = 'NSL_KDD/KDDTrain+_20Percent.txt'
-# test_file_path = 'NSL_KDD/KDDTest-21.txt'
+
 
 binary_col = ["land", "is_host_login", "is_guest_login", "logged_in", "root_shell"]
 categorical_col = ['protocol_type', 'service', 'flag']
@@ -49,7 +32,7 @@ categorical_col = ['protocol_type', 'service', 'flag']
 sys.path.append('../')
 train_file_path = 'dataset/NSL_KDD/KDDTrain+.txt'
 test_file_path = 'dataset/NSL_KDD/KDDTest+.txt'
-SCALER = 'std_scale'
+# SCALER = 'std_scale'
 # SCALER = 'minmax'
 
 # attributes/features of the data
@@ -104,7 +87,7 @@ class MinMax:
         return x
 
 
-def preprocessing(scaler_name=SCALER):
+def preprocessing(scaler_name):
     """ Loading data
     """
     #  Load NSL_KDD train dataset
@@ -115,24 +98,6 @@ def preprocessing(scaler_name=SCALER):
     df_test = pd.read_csv(test_file_path, sep=",", names=datacols)
     df_test = df_test.iloc[:, :-1]
 
-    datacols_range_continous = {"duration": 58329.0, "src_bytes": 1379963888.0, "dst_bytes": 1309937401.0,
-                                "wrong_fragment": 3.0, "urgent": 14.0, "hot": 101.0, "num_failed_logins": 5.0,
-                                "num_compromised": 7479.0, "num_root": 7468.0, "num_file_creations": 100.0,
-                                "num_shells": 5.0,
-                                "num_access_files": 9.0, "num_outbound_cmds": 0.0, "count": 511.0, "srv_count": 511.0,
-                                "serror_rate": 1.0, "srv_serror_rate": 1.0, "rerror_rate": 1.0, "srv_rerror_rate": 1.0,
-                                "same_srv_rate": 1.0, "diff_srv_rate": 1.0, "srv_diff_host_rate": 1.0,
-                                "dst_host_count": 255.0,
-                                "dst_host_srv_count": 255.0, "dst_host_same_srv_rate": 1.0,
-                                "dst_host_diff_srv_rate": 1.0,
-                                "dst_host_same_src_port_rate": 1.0, "dst_host_srv_diff_host_rate": 1.0,
-                                "dst_host_serror_rate": 1.0, "dst_host_srv_serror_rate": 1.0,
-                                "dst_host_rerror_rate": 1.0,
-                                "dst_host_srv_rerror_rate": 1.0, "land": 1.0, "logged_in": 1.0, "root_shell": 1.0,
-                                "su_attempted": 1.0, "is_host_login": 1.0, "is_guest_login": 1.0}
-
-    datacols_range_discrere = {"land": 1, "logged_in": 1, "root_shell": 1, "su_attempted": 1, "is_host_login": 1,
-                               "is_guest_login": 1}
     #  data preprocessing
     mapping = {'ipsweep': 'Probe', 'satan': 'Probe', 'nmap': 'Probe', 'portsweep': 'Probe', 'saint': 'Probe',
                'mscan': 'Probe',
@@ -151,6 +116,11 @@ def preprocessing(scaler_name=SCALER):
                }
     attack_train = df_train['attack'].tolist()
     attack_test = df_test['attack'].tolist()
+
+    attack_test_only = [a for a in attack_test if not a in attack_train]
+    attack_test_only.append('normal')
+
+    idx_novel_attack_only = [i for i in range(len(df_test['attack'])) if df_test['attack'][i] in attack_test_only]
 
     # Apply attack class mappings to the dataset
     df_train['attack_class'] = df_train['attack'].apply(lambda v: mapping[v])
@@ -181,17 +151,20 @@ def preprocessing(scaler_name=SCALER):
 
     else:
         # extract numerical attributes and scale it to have zero mean and unit variance
-        cols = df_train.select_dtypes(include=['float64', 'int64']).columns
-        min_max_scaler = MinMaxScaler()
-        train_numerical = min_max_scaler.fit_transform(df_train[cols].values)
-        test_numerical = min_max_scaler.transform(df_test[cols].values)
+        # cols = df_train.select_dtypes(include=['float64', 'int64']).columns
+        scaler = MinMaxScaler()
+        train_numerical = scaler.fit_transform(df_train[cols_minus_binary].values)
+        test_numerical = scaler.transform(df_test[cols_minus_binary].values)
 
     # turn the result back to a data frame
     train_numerical_df = pd.DataFrame(train_numerical, columns=cols_minus_binary)
     test_numerical_df = pd.DataFrame(test_numerical, columns=cols_minus_binary)
 
     # cols with binary values
-    scaler2 = StandardScaler()
+    if scaler_name is 'std_scale':
+        scaler2 = StandardScaler()
+    else:
+        scaler2 = MinMaxScaler()
     scaler2.fit(df_train[binary_col])
     train_binary = scaler2.transform(df_train[binary_col])
     test_binary = scaler2.transform(df_test[binary_col])
@@ -226,7 +199,7 @@ def preprocessing(scaler_name=SCALER):
     test['flag'] = test['flag'].astype(np.float64)
     test['service'] = test['service'].astype(np.float64)
 
-    return x, y, class_col, test, scaler
+    return x, y, class_col, test, scaler, idx_novel_attack_only
 
 
 def rank_feas_by_correlation(x, col_name):
@@ -273,6 +246,7 @@ def oneHot(train_data, test_data, features, col_names=('protocol_type', 'service
     x_test_1hot = []
     cat_num_dict = {}
     for col in col_names:
+
         if col in train_data.columns:  # split the columns to 2 set: one for numerical, another is categorical
             train_data_num = train_data.drop([col], axis=1)
             train_data_cat = train_data[[col]].copy()
@@ -302,11 +276,11 @@ def cat_to_num(train_data, test_data, features, col_names=('protocol_type', 'ser
     enc = OneHotEncoder()
     train_data = train_data[features]
     test_data = test_data[features]
-    category_max = [3, 70, 11]
     x_train_1hot = []
     x_test_1hot = []
 
     for col in col_names:
+
         if col in train_data.columns:  # split the columns to 2 set: one for numerical, another is categorical
             train_data_num = train_data.drop([col], axis=1)
             train_data_cat = train_data[[col]].copy()
@@ -328,54 +302,6 @@ def cat_to_num(train_data, test_data, features, col_names=('protocol_type', 'ser
         x_train = np.concatenate((x_train, train_1hot), axis=1)
         x_test = np.concatenate((x_test, test_1hot), axis=1)
     return x_train, x_test
-
-
-def data_partition(x, y, class_col, test, features, attack_class):
-    """
-    data partition to
-    """
-    attack_name = attack_class[0][0]
-    new_col = list(class_col)
-    new_col.append('attack_class')
-
-    # add a dimension to target
-    new_y = y[:, np.newaxis]
-
-    # create a data frame from sampled data
-    data_arr = np.concatenate((x, new_y), axis=1)
-    data_df = pd.DataFrame(data_arr, columns=new_col)
-
-    # x_train, x_test = oneHot(data_df, test, features)
-
-    # create two-target classes (normal class and an attack class)
-    class_dict = defaultdict(list)
-    normal_class = [('Normal', 1.0)]
-
-    class_dict = create_class_dict(class_dict, data_df, test, normal_class, attack_class)
-    train_data = class_dict['Normal_' + attack_name][0]
-    test_data = class_dict['Normal_' + attack_name][1]
-    grpclass = 'Normal_' + attack_name
-
-    # transform the selected features to one-hot
-    x_train, x_test, cat_num_dict = oneHot(train_data, test_data, features)
-
-    y_train = train_data[['attack_class']].copy()
-    c, r = y_train.values.shape
-    y_train = y_train.values.reshape(c, )
-    y_test = test_data[['attack_class']].copy()
-    c, r = y_test.values.shape
-    y_test = y_test.values.reshape(c, )
-    # transform the labels to one-hot
-
-    y_train = 1 == y_train[:, None].astype(np.float32)
-    y_test = 1 == y_test[:, None].astype(np.float32)
-
-    y_train = y_train.astype(int)
-    y_test = y_test.astype(int)
-    y_train = np.squeeze(y_train)
-    y_test = np.squeeze(y_test)
-
-    return x_train, x_test, y_train, y_test, cat_num_dict
 
 
 def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
@@ -403,7 +329,61 @@ def create_class_dict(class_dict, data_df, test_df, normal_class, attack_class):
     return class_dict
 
 
+def data_partition(x, y, class_col, test, features, attack_class):
+    """
+    data partition to benign and 'attack_class'
+    """
+
+    new_col = list(class_col)
+    new_col.append('attack_class')
+
+    # add a dimension to target
+    new_y = y[:, np.newaxis]
+
+    # create a data frame from sampled data
+    data_arr = np.concatenate((x, new_y), axis=1)
+    data_df = pd.DataFrame(data_arr, columns=new_col)
+
+    # create two-target classes (normal class and an attack class)
+    class_dict = defaultdict(list)
+    normal_class = [('Normal', 1.0)]
+
+    num = len(attack_class)
+    train_data = []
+    test_data = []
+    for idx in range(num):
+        class_dict = create_class_dict(class_dict, data_df, test, normal_class, [attack_class[idx]])
+        attack_name = attack_class[idx][0]
+        train_data.append(class_dict['Normal_' + attack_name][0])
+        test_data.append(class_dict['Normal_' + attack_name][1])
+    train_data = pd.concat(train_data)
+    test_data = pd.concat(test_data)
+
+    # transform the selected features to one-hot
+    x_train, x_test, cat_num_dict = oneHot(train_data, test_data, features)
+
+    y_train = train_data[['attack_class']].copy()
+    c, r = y_train.values.shape
+    y_train = y_train.values.reshape(c, )
+    y_test = test_data[['attack_class']].copy()
+    c, r = y_test.values.shape
+    y_test = y_test.values.reshape(c, )
+
+    y_train_multi_class = copy.deepcopy(y_train)
+    y_test_multi_class = copy.deepcopy(y_test)
+
+    # normal == 1, here we transform malicious to 0, and normal instance remians 1
+    y_train = 1 == y_train[:, None].astype(np.float32)
+    y_test = 1 == y_test[:, None].astype(np.float32)
+
+    y_train = np.squeeze(y_train)
+    y_test = np.squeeze(y_test)
+
+    return x_train, x_test, y_train, y_test, y_train_multi_class, y_train_multi_class, cat_num_dict
+
+
 def get_two_classes_data(x, y, class_col, test_df, features):
+
     """ This function subdivides train and test dataset into two-class attack labels (either normal or attacks)
     return the loc of target attack and normal samples
     """
@@ -437,8 +417,6 @@ def get_two_classes_data(x, y, class_col, test_df, features):
     y_train_multi_class = y_train_multi_class.astype(int)
     y_test_multi_class = y_test_multi_class.astype(int)
 
-    y_train = y_train.astype(int)
-    y_test = y_test.astype(int)
     y_train = np.squeeze(y_train)
     y_test = np.squeeze(y_test)
 
@@ -466,15 +444,6 @@ def create_class_dict_balance(class_dict, data_df, test_df, normal_class, attack
     return class_dict
 
 
-def select_feas_pca(x_train, x_test, y_train, y_test):
-    print('the dimensionality before pca: {}'.format(x_train.shape[1]))
-    pca = PCA(n_components=100)
-    pca.fit(x_train)
-    x_train = pca.transform(x_train)
-    x_test = pca.transform(x_test)
-    return x_train, x_test, y_train, y_test
-
-
 def plot_pdf(data, y, title_str):
     fig = plt.figure(figsize=(10, 4))
     mal_data = data[y == 0]
@@ -492,6 +461,15 @@ def plot_pdf(data, y, title_str):
     plt.title(title_str)
     fig.tight_layout()
     plt.show()
+
+
+def select_feas_pca(x_train, x_test, y_train, y_test, n_component=50):
+    print('the dimensionality before pca: {}'.format(x_train.shape[1]))
+    pca = PCA(n_components=n_component)
+    pca.fit(x_train)
+    x_train = pca.transform(x_train)
+    x_test = pca.transform(x_test)
+    return x_train, x_test, y_train, y_test
 
 
 def plot_ben_mal(col_name, new_features, x, y):
@@ -540,7 +518,7 @@ def plot_ben_mal(col_name, new_features, x, y):
 
 
 def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(5, 4))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(4.7, 4))
 
     idx = np.argsort(mutual_score)
 
@@ -548,7 +526,7 @@ def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col
     ax1.set_xticks(np.arange(len(cat_col_name)))
     ax1.set_xticklabels([col.index(cat_col_name[i]) for i in idx], rotation=0)
     ax1.set_xlabel('(Categorical) feature index')
-    ax1.set_ylabel('mutual_info score')
+    ax1.set_ylabel('MI score')
 
     idx = np.argsort(anova_score)
 
@@ -557,7 +535,7 @@ def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col
     ax2.set_xticks(np.arange(len(numerical_col_name)))
     ax2.set_xticklabels([col.index(numerical_col_name[i]) for i in idx], rotation=90)
     ax2.set_xlabel('(Numerical) feature index')
-    ax2.set_ylabel('Anova score')
+    ax2.set_ylabel('ANOVA score')
 
     plt.show()
 
@@ -566,9 +544,10 @@ def plot_scores(anova_score, mutual_score, numerical_col_name, cat_col_name, col
 
 
 class NSLKDD:
-    def __init__(self, rng, attack_class=None, data_type=None, fea_selection=True):
+    def __init__(self, seed, attack_class=None, data_type=None, scaler_name='std_scale', n_component=50):
 
-        x, y, x_col_name, test, scaler = preprocessing()
+        x, y, x_col_name, test, scaler, idx_novel_attack_only = preprocessing(scaler_name)
+        set_random_seed(seed)
         selected_features = datacols_no_outbound
 
         # split the data
@@ -577,44 +556,57 @@ class NSLKDD:
                 get_two_classes_data(x, y, x_col_name, test, selected_features)
 
             self.y_test_multi_class = y_test_multi_class
-            y_train_multi_class = y_train_multi_class
         else:
-            x_train, x_test, y_train, y_test, cat_num_dict = \
+            x_train, x_test, y_train, y_test, y_train_multi_class, y_test_multi_class, cat_num_dict = \
                 data_partition(x, y, x_col_name, test, selected_features, attack_class)
 
         # select features using PCA
-        x_train, x_test, y_train, y_test = select_feas_pca(x_train, x_test, y_train, y_test)
+        x_train, x_test, y_train, y_test = select_feas_pca(x_train, x_test, y_train, y_test, n_component)
         print('x_train', x_train[0], x_train[0].shape)
 
         # train data shuffling
         train_len = x_train.shape[0]
         idx = list(range(train_len))
-        rng.shuffle(idx)
+        np.random.shuffle(idx)
 
         x_train = copy.deepcopy(x_train[idx, :])
         y_train = copy.deepcopy(y_train[idx])
         y_train_multi_class = copy.deepcopy(y_train_multi_class[idx])
 
+        # transform benign instance to label 0, malicious instance to label 1
+        y_train = (-y_train.astype(int) + 1).astype(int)
+        y_test = (-y_test.astype(int) + 1).astype(int)
+
         # select a subset
         if data_type == 'normal':
-            idx_train = np.where(y_train == 1)
-            idx_test = np.where(y_test == 1)
-
-        elif data_type == 'anomaly':
             idx_train = np.where(y_train == 0)
             idx_test = np.where(y_test == 0)
+
+        elif data_type == 'anomaly':
+            idx_train = np.where(y_train == 1)
+            idx_test = np.where(y_test == 1)
         else:
             idx_train = list(np.arange(len(y_train)))
             idx_test = list(np.arange(len(y_test)))
+            # novel attack in test set
 
         y_train = np.copy(y_train[idx_train])
+        y_train_multi_class = np.copy(y_train_multi_class[idx_train])
         y_test = np.copy(y_test[idx_test])
+
         x_train = np.copy(x_train[idx_train])
         x_test = np.copy(x_test[idx_test])
 
+        # if loading whole dataset, show the percentage of benign and malicious, and get the novel attack
+        if data_type is None:
+            print('the benign records in testing set', sum(y_test == 0))
+            print('the malicious records in testing set', sum(y_test == 1))
+
+            self.test_data_novel = x_test[idx_novel_attack_only, ]
+            self.test_labels_novel = y_test[idx_novel_attack_only]
+
         self.test_data = x_test
         self.test_labels = y_test
-        self.cat_num_dict = cat_num_dict
         self.validation_data = x_train[:VALIDATION_SIZE, ]
         self.validation_labels = y_train[:VALIDATION_SIZE]
         self.train_data = x_train[VALIDATION_SIZE:, ]
@@ -622,9 +614,9 @@ class NSLKDD:
         self.y_train_multi_class = y_train_multi_class[VALIDATION_SIZE:]
         self.y_valid_multi_class = y_train_multi_class[:VALIDATION_SIZE]
 
+        self.cat_num_dict = cat_num_dict
         self.scaler = scaler
         self.FEATURE_NUM_FINAL = x_train.shape[1]
-
         self.input_shape = x_train.shape[1]
 
     def data_rerange(self, data):
@@ -659,26 +651,22 @@ class NSLData(Dataset):
         return record, label
 
 
-class NSLDataset():
-    def __init__(self, rng, normal_class=1, data_partition_type='normalOverAll'):
+class NSLDataset:
+    def __init__(self, rng, data_partition_type='normalOverAll', fea_selection=False):
         super().__init__()
-
-        self.n_classes = 2  # 0: normal, 1: outlier
-        self.normal_classes = tuple([normal_class])
-        self.outlier_classes = [0]
 
         attack_type = {'DoS': 0.0, 'Probe': 2.0, 'R2L': 3.0, 'U2R': 4.0}
         if data_partition_type is "normalOverAll":
-            data = NSLKDD(rng)
-            normal_data = NSLKDD(rng, data_type='normal')
+            data = NSLKDD(rng, fea_selection=False, scaler_name='minmax')
+            normal_data = NSLKDD(rng, data_type='normal', fea_selection=False, scaler_name='minmax')
         else:
             attack = [(data_partition_type, attack_type[data_partition_type])]
-            data = NSLKDD(rng, attack)
-            normal_data = NSLKDD(rng, attack, data_type='normal')
+            data = NSLKDD(rng, attack, fea_selection=False, scaler_name='minmax')
+            normal_data = NSLKDD(rng, attack, data_type='normal', fea_selection=False, scaler_name='minmax')
 
-        self.train_set = NSLData(normal_data.train_data, normal_data.train_labels)
-        self.valid_set = NSLData(normal_data.validation_data, normal_data.validation_labels)
-        self.test_set = NSLData(data.test_data, data.test_labels)
+        self.train_set = NSLData(np.absolute(normal_data.train_data), normal_data.train_labels)
+        self.valid_set = NSLData(np.absolute(normal_data.validation_data), normal_data.validation_labels)
+        self.test_set = NSLData(np.absolute(data.test_data), data.test_labels)
 
     def loaders(self, batch_size: int, shuffle_train=True, shuffle_test=False, num_workers: int = 0) -> (
             DataLoader, DataLoader):
@@ -689,28 +677,4 @@ class NSLDataset():
         valid_loader = DataLoader(dataset=self.valid_set, batch_size=batch_size, shuffle=shuffle_test,
                                   num_workers=0)
         return train_loader, test_loader, valid_loader
-
-# class NSLModel:
-#     def __init__(self, restore, feature_num, session=None):
-#         self.num_features = feature_num
-#         self.num_labels = 2
-#
-#         model = Sequential()
-#         model.add(Dense(50, input_dim=feature_num, activation='relu'))
-#         model.add(Dense(2))
-#         model.load_weights(restore)
-#         self.model = model
-#
-#     def predict(self, data):
-#         return self.model(data)
-#
-#     def evaluate_only(self, x, y):
-#         outputs = self.model(x).eval()
-#         y_pred = np.argmax(outputs, axis=1)
-#         evaluate_sub('nn model', y, y_pred)
-#
-#     def evaluate(self, x, y):
-#         predicted = self.model(x).eval()
-#         acc = np.count_nonzero(predicted.argmax(1) == y.argmax(1)) / y.shape[0]
-#         return acc
 

@@ -21,7 +21,7 @@ def adjust_learning_rate(optimizer, lr_rate):
 
 def set_random_seed(manual_seed, use_cuda=False):
     random.seed(manual_seed)
-    # np.random.seed(manual_seed)
+    np.random.seed(manual_seed)
     rng = np.random.default_rng(manual_seed)
     torch.manual_seed(manual_seed)
     if use_cuda:
@@ -216,16 +216,19 @@ def split_evaluate(y, scores, plot=False, filename=None, manual_th=None, perform
     auc_score = auc(fpr, tpr)
     if plot:
         plot_roc(fpr, tpr, auc_score, filename)
-
-    pos1 = np.where(fpr <= 0.005)[0]
-    pos2 = np.where(fpr <= 0.01)[0]
+    pos0 = np.where(fpr <= 0.02)[0]
+    pos1 = np.where(fpr <= 0.04)[0]
+    pos2 = np.where(fpr <= 0.06)[0]
     print(f'AUC: {auc_score}')
-    print(f'TPR(FPR=0.005): {tpr[pos1[-1]]:.4f}, threshold: {thresholds[pos1[-1]]}\n')
-    print(f'TPR(FPR=0.01): {tpr[pos2[-1]]:.4f}, threshold: {thresholds[pos2[-1]]}\n')
-    pos1 = np.where(fpr <= 0.0005)[0]
-    pos2 = np.where(fpr <= 0.001)[0]
-    print(f'TPR(FPR=0.0005): {tpr[pos1[-1]]:.4f}, threshold: {thresholds[pos1[-1]]}\n')
-    print(f'TPR(FPR=0.001): {tpr[pos2[-1]]:.4f}, threshold: {thresholds[pos2[-1]]}\n')
+    print(f'TPR(FPR=0.02): {tpr[pos0[-1]]:.4f}, threshold: {thresholds[pos0[-1]]}\n')
+    print(f'TPR(FPR=0.04): {tpr[pos1[-1]]:.4f}, threshold: {thresholds[pos1[-1]]}\n')
+    print(f'TPR(FPR=0.06): {tpr[pos2[-1]]:.4f}, threshold: {thresholds[pos2[-1]]}\n')
+    pos1 = np.where(fpr <= 0.08)[0]
+    pos2 = np.where(fpr <= 0.1)[0]
+    pos3 = np.where(fpr <= 0.12)[0]
+    print(f'TPR(FPR=0.08): {tpr[pos1[-1]]:.4f}, threshold: {thresholds[pos1[-1]]}\n')
+    print(f'TPR(FPR=0.1): {tpr[pos2[-1]]:.4f}, threshold: {thresholds[pos2[-1]]}\n')
+    print(f'TPR(FPR=0.12): {tpr[pos3[-1]]:.4f}, threshold: {thresholds[pos3[-1]]}\n')
 
     # save scores to file
     labels_scores = np.concatenate((y.reshape(-1, 1), scores.reshape(-1, 1)), axis=1)
