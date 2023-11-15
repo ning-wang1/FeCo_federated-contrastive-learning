@@ -299,7 +299,7 @@ def plot_recall_ablation():
 
     x = [0.02, 0.04, 0.06, 0.08, 0.1, 0.12]
 
-    fig = plt.figure(figsize=(6, 4))
+    fig = plt.figure(figsize=(4.5, 3.5))
     plt.plot(x, np.array(detect).sum(axis=0) / 3, marker='s',
              label='Fea($\\times$)-Rep($\\times$)-Detect($\checkmark$)')
     plt.plot(x, np.array(fea_plus_detect).sum(axis=0) / 3, marker='d',
@@ -317,12 +317,12 @@ def plot_recall_ablation():
 
 if __name__ == '__main__':
     dir = os.getcwd()
-    for i in range(9):
-        device_name = DEVICE_NAMES[i]
-        score_file= os.path.join(dir, f'result/score/centralized/score_label_{device_name}.npy')
-        score_label = np.load(score_file)
-        distribution_plot(score_label, device_name)
+    # for i in range(9):
+    #     device_name = DEVICE_NAMES[i]
+    #     score_file= os.path.join(dir, f'result/score/centralized/score_label_{device_name}.npy')
+    #     score_label = np.load(score_file)
+    #     distribution_plot(score_label, device_name)
     # plot_fpr()
     # bar_plot_fpr()
     # pca_compare()
-    # plot_recall_ablation()
+    plot_recall_ablation()

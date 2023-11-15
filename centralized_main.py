@@ -384,7 +384,7 @@ if __name__ == '__main__':
         args.epochs = 60
         args.val_step = 60
         args.save_step = 60
-        args.tau = 0.02
+        args.tau = 0.03
         args.learning_rate = 0.001
         args.lr_decay = 45
         args.n_train_batch_size =5
@@ -394,7 +394,7 @@ if __name__ == '__main__':
         args.val_step = 10
         args.save_step = 10
     #
-    args.manual_seed = 2
+    args.manual_seed = 1
     args.mode = 'train'
     main(args)
     args.mode = 'test'
